@@ -89,6 +89,10 @@ Stmt           ::= SimpleStmt ';'
                 | WhileStmt
                 | ForRangeStmt
                 | Block
+                | PrintlnStmt ';'
+
+PrintlnStmt    ::= 'println!' '(' STRING_LITERAL ',' Expr ')'
+                | 'println!' '(' Expr ')'
 
 SimpleStmt     ::= VarDecl
                 | AssignStmt
@@ -97,9 +101,16 @@ SimpleStmt     ::= VarDecl
 
 VarDecl        ::= 'let' Mutability? ID TypeAnnotation InitializerOpt
                 | 'let' Mutability? ID '=' Expr         // inferencia local, obliga inicializador
-AssignStmt     ::= PlaceExpr '=' Expr
+AssignStmt     ::= PlaceExpr AssignOp Expr    
+AssignOp       ::= '=' | '+=' | '-=' | '*=' | '/='  | '%='
 PlaceExpr      ::= ID | DerefExpr
 DerefExpr      ::= '*' Expr
+
+PrintlnStmt    ::= 'println!' '(' FormatArgs ')' 
+FormatArgs     ::= STRING_LITERAL ',' ExprList                    // ← println!("{} {}", x, y)
+                | Expr                                            // ← println!(x)
+                | ε                                               // ← println!()
+ExprList       ::= Expr (',' Expr)*                                              
 
 ForRangeStmt   ::= 'for' ID 'in' Expr '..' Expr Block   // rango: inicio <= i < fin
 WhileStmt      ::= 'while' Expr Block
@@ -119,7 +130,7 @@ Add            ::= Mul ( ( '+' | '-' ) Mul )*
 Mul            ::= Pow ( ( '*' | '/' | '%' ) Pow )*
 Pow            ::= Prefix ( '**' Pow )?               // derecha
 Prefix         ::= PrefixOp Prefix | CastExpr
-PrefixOp       ::= '!' | '-' | '&' | '*'
+PrefixOp       ::= '!' | '-' | '&' | '&mut' | '*' 
 
 CastExpr       ::= Postfix ('as' Type)*               // permite cadenas: x as i64 as f64
 Postfix        ::= Primary (PostfixTail)*
@@ -132,6 +143,9 @@ ArgList        ::= Expr (',' Expr)*
 Literal        ::= INT_LITERAL | FLOAT_LITERAL | BoolLiteral | STRING_LITERAL
 BoolLiteral    ::= 'true' | 'false'
 STRING_LITERAL ::= '"' ( [^"\\] | \\ . )* '"'
+INT_LITERAL    ::= [0-9]+
+FLOAT_LITERAL  ::= [0-9]+ '.' [0-9]+ ([eE] [+-]? [0-9]+)?        // ← notación científica
+ID             ::= [a-zA-Z_][a-zA-Z0-9_]*
 ```
 
 Nota: Los punteros pueden anidarse: `*mut *const i32` es válido por la producción recursiva.
