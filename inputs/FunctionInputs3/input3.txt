@@ -1,0 +1,16 @@
+fn maximo(a: i32, b: i32) -> i32 {
+    let mut max: i32;
+    if a > b {
+        max = a;
+    } else {
+        max = b;
+    }
+    max
+}
+
+fn main() {
+    let mut resultado: i32;
+    resultado = maximo(15, 10);
+    println!("{}", resultado);
+}
+

@@ -1,0 +1,13 @@
+fn multiplicar(a: i32, b: i32) -> i32 {
+    let mut resultado: i32;
+    resultado = a * b;
+    resultado
+}
+
+fn main() {
+    let mut x: i32;
+    let mut y: i32;
+    x = 5;
+    y = 8;
+    println!("{}", multiplicar(x, y));
+}
