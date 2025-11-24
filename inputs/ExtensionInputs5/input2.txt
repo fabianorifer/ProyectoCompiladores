@@ -1,0 +1,19 @@
+// Test de conversión de tipos: cast explícito con 'as'
+fn main() {
+    let x: i32 = 100;
+    let y: i64 = x as i64;
+    
+    println!("Converted to i64: {}", y);
+    
+    let a: f32 = 3.14;
+    let b: f64 = a as f64;
+    
+    let int_val: i32 = 42;
+    let float_val: f32 = int_val as f32;
+    
+    println!("i32 to f32: {}", float_val);
+    
+    // Conversión en cadena
+    let chain: f64 = x as i64 as f64;
+    println!("Chained: {}", chain);
+}
