@@ -1,0 +1,17 @@
+// Test de tipos flotantes y operaciones
+let pi: f32 = 3.14159;
+let e: f64 = 2.71828;
+
+fn compute_area(radius: f32) -> f32 {
+    let area: f32 = pi * radius ** 2;
+    return area;
+}
+
+fn main() {
+    let r: f32 = 5.0;
+    let area: f32 = compute_area(r);
+    println!("Area: {}", area);
+    
+    let sci_num: f64 = 1.5e10;
+    println!("{}", sci_num);
+}

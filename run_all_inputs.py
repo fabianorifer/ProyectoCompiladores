@@ -1,6 +1,7 @@
 import os
 import subprocess
 import shutil
+import glob
 
 def get_input_subfolders():
     """Obtiene todas las subcarpetas dentro de 'inputs/'"""
@@ -50,9 +51,10 @@ def select_folder():
             print("❌ Por favor ingresa un número válido.")
 
 def run_inputs_from_folder(subfolder_name, output_dir):
-    """Ejecuta todos los inputs de una subcarpeta específica"""
+    """Ejecuta todos los inputs de una subcarpeta específica y guarda los tokens"""
     input_dir = os.path.join("inputs", subfolder_name)
-    os.makedirs(output_dir, exist_ok=True)
+    scanner_output_dir = os.path.join(output_dir, "scanner_outputs")
+    os.makedirs(scanner_output_dir, exist_ok=True)
     
     # Obtener todos los archivos .txt
     input_files = sorted([f for f in os.listdir(input_dir) if f.endswith('.txt')])
@@ -65,6 +67,9 @@ def run_inputs_from_folder(subfolder_name, output_dir):
     print(f"🚀 Ejecutando {len(input_files)} inputs de: {subfolder_name}")
     print(f"{'='*60}\n")
     
+    success_count = 0
+    fail_count = 0
+    
     for input_file in input_files:
         filepath = os.path.join(input_dir, input_file)
         base_name = os.path.splitext(input_file)[0]
@@ -73,30 +78,63 @@ def run_inputs_from_folder(subfolder_name, output_dir):
         run_cmd = ["./a.out", filepath]
         result = subprocess.run(run_cmd, capture_output=True, text=True)
         
-        # Archivo .s generado (se crea en la misma carpeta del input)
-        asm_file = os.path.join(input_dir, f"{base_name}.s")
+        # Archivo _tokens.txt generado por el scanner
+        tokens_file = os.path.join(input_dir, f"{base_name}_tokens.txt")
         
-        # Mover archivo si existe
+        # Verificar si se generó exitosamente
+        scanner_success = False
+        if os.path.isfile(tokens_file):
+            # Leer el archivo para verificar si fue exitoso
+            with open(tokens_file, 'r', encoding='utf-8') as f:
+                content = f.read()
+                if "Scanner exitoso" in content:
+                    scanner_success = True
+                    success_count += 1
+                else:
+                    fail_count += 1
+            
+            # Mover archivo de tokens a la carpeta de output
+            dest_tokens = os.path.join(scanner_output_dir, f"{base_name}_tokens.txt")
+            shutil.move(tokens_file, dest_tokens)
+            
+            if scanner_success:
+                print("✅ Scanner exitoso")
+            else:
+                print("❌ Scanner no exitoso")
+        else:
+            print("⚠️  (no se generó archivo de tokens)")
+            fail_count += 1
+        
+        # Archivo .s generado (si existe)
+        asm_file = os.path.join(input_dir, f"{base_name}.s")
         if os.path.isfile(asm_file):
             dest_asm = os.path.join(output_dir, f"{base_name}.s")
             shutil.move(asm_file, dest_asm)
-            print("✅")
-        else:
-            print("⚠️  (no se generó .s)")
         
         # Mostrar errores si los hay
         if result.stderr:
             print(f"   ⚠️  Error: {result.stderr.strip()}")
+    
+    # Reporte final
+    print(f"\n{'='*60}")
+    print(f"📊 RESUMEN - {subfolder_name}")
+    print(f"{'='*60}")
+    print(f"   ✅ Scanner exitoso: {success_count}/{len(input_files)}")
+    print(f"   ❌ Scanner no exitoso: {fail_count}/{len(input_files)}")
+    print(f"   📁 Tokens guardados en: {scanner_output_dir}")
+    print(f"{'='*60}\n")
 
 def main():
-    # Archivos c++
-    programa = ["main.cpp", "scanner.cpp", "token.cpp", "parser.cpp", "ast.cpp", "visitor.cpp"]
+    # Archivos c++ para el scanner
+    # Usamos test_scanner.cpp en lugar de main.cpp para probar solo el scanner
+    # y evitar errores de compilación del parser que aún no ha sido actualizado
+    programa = ["test_scanner.cpp", "scanner.cpp", "token.cpp"]
     
     # Compilar
     print("\n" + "="*60)
-    print("🔨 COMPILANDO PROYECTO")
+    print("🔨 COMPILANDO SCANNER")
     print("="*60)
-    compile = ["g++"] + programa
+    compile = ["g++", "-o", "a.out"] + programa + ["-std=c++11"]
     print("Comando:", " ".join(compile))
     result = subprocess.run(compile, capture_output=True, text=True)
     

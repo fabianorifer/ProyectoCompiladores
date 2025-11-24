@@ -1,0 +1,19 @@
+// Test de inferencia de tipos: variables globales y locales
+let inferred_global = 42;
+let mut inferred_float = 3.14;
+
+fn main() {
+    let x = 10;
+    let y = 20;
+    let sum = x + y;
+    
+    println!("Sum: {}", sum);
+    
+    let flag = true;
+    let name = "Rust";
+    
+    if flag {
+        let result = x * 2;
+        println!("{}", result);
+    }
+}

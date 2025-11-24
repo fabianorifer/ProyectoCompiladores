@@ -1,0 +1,25 @@
+// Test de promoción de tipos en operaciones
+fn calculate(x: i32, y: i64) -> i64 {
+    let promoted: i64 = x as i64;
+    return promoted + y;
+}
+
+fn main() {
+    let small: i32 = 10;
+    let big: i64 = 1000;
+    
+    let result = calculate(small, big);
+    println!("Result: {}", result);
+    
+    // Promoción en expresiones aritméticas
+    let a: i32 = 5;
+    let b: i64 = 10;
+    let sum: i64 = a as i64 + b;
+    
+    // Conversión entre tipos flotantes
+    let f1: f32 = 2.5;
+    let f2: f64 = 3.7;
+    let mixed: f64 = f1 as f64 + f2;
+    
+    println!("{}", mixed);
+}

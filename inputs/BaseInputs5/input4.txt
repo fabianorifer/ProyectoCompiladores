@@ -1,0 +1,13 @@
+// Test de punteros básicos
+fn main() {
+    let mut value: i32 = 42;
+    let ptr: *mut i32 = &mut value;
+    
+    *ptr = 100;
+    println!("Value: {}", value);
+    
+    let const_val: i64 = 999;
+    let const_ptr: *const i64 = &const_val;
+    
+    println!("{}", *const_ptr);
+}

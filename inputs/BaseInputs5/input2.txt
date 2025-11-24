@@ -1,0 +1,28 @@
+// Test de control de flujo: if, while, for
+fn calculate(n: i32) -> i32 {
+    let mut result: i32 = 0;
+    
+    if n > 0 {
+        result = n * 2;
+    } else {
+        result = -n;
+    }
+    
+    return result;
+}
+
+fn main() {
+    let mut sum: i32 = 0;
+    
+    for i in 1..10 {
+        sum += i;
+    }
+    
+    let mut counter: i32 = 0;
+    while counter < 5 {
+        println!("Counter: {}", counter);
+        counter += 1;
+    }
+    
+    println!("Sum: {}", sum);
+}

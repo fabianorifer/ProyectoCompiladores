@@ -10,36 +10,84 @@ class Token {
 public:
     // Tipos de token
     enum Type {
-        PLUS,    // +
-        MINUS,   // -
-        MUL,     // *
-        DIV,     // /
-        POW,     // **
-        LPAREN,  // (
-        RPAREN,  // )
-        SQRT,    // sqrt
-        NUM,     // Número
-        ERR,     // Error
-        ID,      // ID
-        LE,
-        FUN,
-        ENDFUN,
-        RETURN,
-        SEMICOL,    
-        ASSIGN,
-        PRINT,
-        IF,
-        WHILE,
-        DO,
-        THEN,
-        ENDIF,
-        ENDWHILE,
-        ELSE,
-        END,      // Fin de entrada
-        VAR,
-        COMA,
-        TRUE,
-        FALSE
+        // Operadores aritméticos
+        PLUS,       // +
+        MINUS,      // -
+        MUL,        // *
+        DIV,        // /
+        MOD,        // %
+        POW,        // **
+        
+        // Operadores de comparación
+        EQ,         // ==
+        NEQ,        // !=
+        LT,         // <
+        LE,         // <=
+        GT,         // >
+        GE,         // >=
+        
+        // Operadores lógicos
+        AND,        // &&
+        OR,         // ||
+        NOT,        // !
+        
+        // Operadores de asignación
+        ASSIGN,     // =
+        PLUS_ASSIGN,  // +=
+        MINUS_ASSIGN, // -=
+        MUL_ASSIGN,   // *=
+        DIV_ASSIGN,   // /=
+        MOD_ASSIGN,   // %=
+        
+        // Delimitadores
+        LPAREN,     // (
+        RPAREN,     // )
+        LBRACE,     // {
+        RBRACE,     // }
+        SEMICOL,    // ;
+        COMA,       // ,
+        COLON,      // :
+        ARROW,      // ->
+        DOTDOT,     // ..
+        
+        // Keywords
+        LET,        // let
+        MUT,        // mut
+        FN,         // fn
+        RETURN,     // return
+        IF,         // if
+        ELSE,       // else
+        WHILE,      // while
+        FOR,        // for
+        IN,         // in
+        AS,         // as
+        PRINTLN,    // println!
+        
+        // Tipos
+        I32,        // i32
+        I64,        // i64
+        F32,        // f32
+        F64,        // f64
+        BOOL,       // bool
+        
+        // Punteros
+        PTR_MUT,    // *mut
+        PTR_CONST,  // *const
+        AMP,        // &
+        AMP_MUT,    // &mut
+        DEREF,      // * (como operador unario de desreferencia)
+        
+        // Literales y otros
+        NUM,        // Número entero
+        FLOAT,      // Número flotante
+        STRING,     // String literal
+        TRUE,       // true
+        FALSE,      // false
+        ID,         // Identificador
+        
+        // Control
+        ERR,        // Error
+        END         // Fin de entrada
     };
 
     // Atributos

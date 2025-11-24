@@ -1,0 +1,10 @@
+// Test básico: variables globales y función principal
+let x: i32 = 10;
+let mut y: i64 = 20;
+
+fn main() {
+    let z: i32 = x + 5;
+    println!("Resultado: {}", z);
+    y = y + 1;
+    println!("{}", y);
+}

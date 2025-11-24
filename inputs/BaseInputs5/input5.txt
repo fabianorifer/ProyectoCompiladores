@@ -1,0 +1,35 @@
+// Test complejo: múltiples características
+let global_flag: bool = true;
+let mut counter: i64 = 0;
+
+fn factorial(n: i32) -> i32 {
+    if n <= 1 {
+        return 1;
+    } else {
+        return n * factorial(n - 1);
+    }
+}
+
+fn process(x: i32, y: i32) -> i32 {
+    let result: i32 = (x + y) * (x - y);
+    return result;
+}
+
+fn main() {
+    let fact: i32 = factorial(5);
+    println!("Factorial: {}", fact);
+    
+    let mut acc: i32 = 0;
+    for i in 0..10 {
+        if i % 2 == 0 {
+            acc += i;
+        }
+    }
+    
+    let p: i32 = process(10, 3);
+    println!("Processed: {}", p);
+    
+    if global_flag && acc > 5 {
+        println!("Condition met");
+    }
+}
