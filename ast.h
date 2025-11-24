@@ -1,176 +1,193 @@
-#ifndef AST_H
-#define AST_H
+// Actualizado para nueva gramática estilo Rust manteniendo patrón Visitor
+#ifndef AST_RUST_H
+#define AST_RUST_H
 
 #include <string>
-#include <list>
-#include <ostream>
 #include <vector>
+#include <list>
 using namespace std;
 
 class Visitor;
-class VarDec;
 
-// Operadores binarios soportados
-enum BinaryOp { 
-    PLUS_OP, 
-    MINUS_OP, 
-    MUL_OP, 
-    DIV_OP,
-    POW_OP,
-    LE_OP
+// Tipos soportados (ampliable a punteros si se requiere)
+enum class DataType { VOID, I32, I64, F32, F64, BOOL, UNKNOWN };
+
+// Operadores binarios
+enum class BinaryOp {
+    PLUS_OP, MINUS_OP, MUL_OP, DIV_OP, MOD_OP, POW_OP,
+    OR_OP, AND_OP,
+    EQ_OP, NE_OP,
+    LT_OP, LE_OP, GT_OP, GE_OP
 };
 
-// Clase abstracta Exp
-class Exp {
+// Operadores unarios
+enum class UnaryOp { MINUS_OP, NOT_OP, DEREF_OP, ADDR_OP, ADDR_MUT_OP };
+
+// Clase base Node
+class Node {
 public:
-    virtual int  accept(Visitor* visitor) = 0;
-    virtual ~Exp() = 0;  // Destructor puro → clase abstracta
-    static string binopToChar(BinaryOp op);  // Conversión operador → string
+    virtual int accept(Visitor* v) = 0;
+    virtual ~Node() {}
 };
 
-// Expresión binaria
+// Expresiones
+class Exp : public Node { };
+class Stm : public Node { };
+
 class BinaryExp : public Exp {
 public:
     Exp* left;
     Exp* right;
     BinaryOp op;
-    int accept(Visitor* visitor);
     BinaryExp(Exp* l, Exp* r, BinaryOp op);
-    ~BinaryExp();
-
+    int accept(Visitor* v);
 };
 
-// Expresión numérica
+class UnaryExp : public Exp {
+public:
+    UnaryOp op;
+    Exp* operand;
+    UnaryExp(UnaryOp op, Exp* operand);
+    int accept(Visitor* v);
+};
+
 class NumberExp : public Exp {
 public:
-    int value;
-    int accept(Visitor* visitor);
-    NumberExp(int v);
-    ~NumberExp();
+    string value;        // Mantener string para soportar flotantes/notación científica
+    DataType numberType; // Tipo explícito según contexto
+    NumberExp(string v, DataType t);
+    int accept(Visitor* v);
 };
 
-// Expresión numérica
-class IdExp : public Exp {
+class BoolExp : public Exp {
+public:
+    bool value;
+    BoolExp(bool v);
+    int accept(Visitor* v);
+};
+
+class StringExp : public Exp {
 public:
     string value;
-    int accept(Visitor* visitor);
-    IdExp(string v);
-    ~IdExp();
+    StringExp(string v);
+    int accept(Visitor* v);
 };
 
-
-class Stm{
-public:
-    virtual int accept(Visitor* visitor) = 0;
-    virtual ~Stm() = 0;
-};
-
-class VarDec{
-public:
-    string type;
-    list<string> vars;
-    VarDec();
-    int accept(Visitor* visitor);
-    ~VarDec();
-};
-
-
-class Body{
-public:
-    list<Stm*> StmList;
-    list<VarDec*> declarations;
-    int accept(Visitor* visitor);
-    Body();
-    ~Body();
-};
-
-
-
-
-class IfStm: public Stm {
-public:
-    Exp* condition;
-    Body* then;
-    Body* els;
-    IfStm(Exp* condition, Body* then, Body* els);
-    int accept(Visitor* visitor);
-    ~IfStm(){};
-};
-
-class WhileStm: public Stm {
-public:
-    Exp* condition;
-    Body* b;
-    WhileStm(Exp* condition, Body* b);
-    int accept(Visitor* visitor);
-    ~WhileStm(){};
-};
-
-
-
-class AssignStm: public Stm {
+class IdExp : public Exp {
 public:
     string id;
-    Exp* e;
-    AssignStm(string, Exp*);
-    ~AssignStm();
-    int accept(Visitor* visitor);
+    IdExp(string v);
+    int accept(Visitor* v);
 };
 
-class PrintStm: public Stm {
+class CallExp : public Exp {
 public:
-    Exp* e;
-    PrintStm(Exp*);
-    ~PrintStm();
-    int accept(Visitor* visitor);
+    string funcName;
+    vector<Exp*> args;
+    CallExp(string name, vector<Exp*> args);
+    int accept(Visitor* v);
 };
 
-
-
-
-
-
-class ReturnStm: public Stm {
+class CastExp : public Exp {
 public:
-    Exp* e;
-    ReturnStm(){};
-    ~ReturnStm(){};
-    int accept(Visitor* visitor);
+    Exp* expr;
+    DataType targetType;
+    CastExp(Exp* e, DataType t);
+    int accept(Visitor* v);
 };
 
-class FcallExp: public Exp {
+// Sentencias y bloques
+class Block : public Stm {
 public:
-    string nombre;
-    vector<Exp*> argumentos;
-    int accept(Visitor* visitor);
-    FcallExp(){};
-    ~FcallExp(){};
+    vector<Stm*> stmts;
+    Block();
+    void addStm(Stm* s);
+    int accept(Visitor* v);
 };
 
-
-
-
-class FunDec{
+class VarDec : public Stm { // También puede ser ítem global
 public:
-    string nombre;
-    string tipo;
-    Body* cuerpo;
-    vector<string> Ptipos;
-    vector<string> Pnombres;
-    int accept(Visitor* visitor);
-    FunDec(){};
-    ~FunDec(){};
+    string name;
+    DataType type;
+    Exp* init;
+    bool isMut;
+    bool isGlobal;
+    VarDec(string n, DataType t, Exp* i, bool m, bool g);
+    int accept(Visitor* v);
 };
 
-class Program{
+class AssignStm : public Stm {
 public:
-    list<VarDec*> vdlist;
-    list<FunDec*> fdlist;
-    Program(){};
-    ~Program(){};
-    int accept(Visitor* visitor);
+    Exp* place; // normalmente IdExp o deref futuro
+    Exp* expr;
+    AssignStm(Exp* p, Exp* e);
+    int accept(Visitor* v);
 };
 
+class IfStm : public Stm {
+public:
+    Exp* condition;
+    Block* thenBlock;
+    Stm* elseBlock; // Block o If encadenado
+    IfStm(Exp* c, Block* t, Stm* e);
+    int accept(Visitor* v);
+};
 
+class WhileStm : public Stm {
+public:
+    Exp* condition;
+    Block* block;
+    WhileStm(Exp* c, Block* b);
+    int accept(Visitor* v);
+};
 
-#endif // AST_H
+class ForStm : public Stm {
+public:
+    string var;
+    Exp* start;
+    Exp* end;
+    Block* block;
+    ForStm(string v, Exp* s, Exp* e, Block* b);
+    int accept(Visitor* v);
+};
+
+class ReturnStm : public Stm {
+public:
+    Exp* expr; // opcional
+    ReturnStm(Exp* e);
+    int accept(Visitor* v);
+};
+
+class PrintStm : public Stm {
+public:
+    string format;       // cadena de formato (puede vacía)
+    vector<Exp*> args;   // argumentos opcionales
+    PrintStm(string f, vector<Exp*> a);
+    int accept(Visitor* v);
+};
+
+class ExprStm : public Stm {
+public:
+    Exp* expr;
+    ExprStm(Exp* e);
+    int accept(Visitor* v);
+};
+
+class FunDec : public Node {
+public:
+    string name;
+    vector<pair<string, DataType>> params;
+    DataType returnType;
+    Block* body;
+    FunDec(string n, vector<pair<string, DataType>> p, DataType rt, Block* b);
+    int accept(Visitor* v);
+};
+
+class Program : public Node {
+public:
+    vector<Node*> items; // VarDec globales o FunDec
+    void addItem(Node* item);
+    int accept(Visitor* v);
+};
+
+#endif // AST_RUST_H

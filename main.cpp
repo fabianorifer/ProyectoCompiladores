@@ -6,13 +6,19 @@
 #include "ast.h"
 #include "visitor.h"
 
+// Touch file to trigger recompile after AST guard change
+
 using namespace std;
 
 int main(int argc, const char* argv[]) {
-    // Verificar número de argumentos
+    // Permitir modo debug vía variable de entorno COMP_DEBUG
+    bool debugMode = (getenv("COMP_DEBUG") != nullptr);
+    bool debugTokens = (getenv("COMP_DEBUG_TOKENS") != nullptr);
+    // Verificar número de argumentos (permitimos exactamente 1 archivo)
     if (argc != 2) {
         cout << "Número incorrecto de argumentos.\n";
         cout << "Uso: " << argv[0] << " <archivo_de_entrada>" << endl;
+        cout << "(Opcional: export COMP_DEBUG=1 para logs de parser)" << endl;
         return 1;
     }
 
@@ -32,9 +38,25 @@ int main(int argc, const char* argv[]) {
 
     // Crear instancias de Scanner 
     Scanner scanner1(input.c_str());
+    if (debugTokens) {
+        cerr << "[TOKDUMP] Inicio volcado de tokens" << endl;
+        Scanner temp(input.c_str());
+        Token* tk;
+        int idx=0;
+        while ((tk = temp.nextToken())->type != Token::END) {
+            cerr << "[TOK] #" << idx++ << " type=" << tk->type << " text=" << tk->text << endl;
+            if (tk->type == Token::ERR) { cerr << "[TOK] Error léxico" << endl; delete tk; break; }
+            delete tk;
+        }
+        cerr << "[TOKDUMP] Fin volcado" << endl;
+    }
 
     // Crear instancias de Parser
     Parser parser(&scanner1);
+    if (debugMode) {
+        cerr << "[DEBUG] Parser en modo depuración" << endl;
+        parser.setDebug(true);
+    }
 
     // Parsear y generar AST
   

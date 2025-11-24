@@ -1,21 +1,13 @@
-#include<iostream>
-#include "token.h"
-#include "scanner.h"
-#include "ast.h"
 #include "parser.h"
+#include "ast.h" // ensure AST definitions visible after previous guard fix
+#include <iostream>
+#include <stdexcept>
 
 using namespace std;
 
-// =============================
-// Métodos de la clase Parser
-// =============================
-
-Parser::Parser(Scanner* sc) : scanner(sc) {
-    previous = nullptr;
+Parser::Parser(Scanner* scanner) : scanner(scanner) {
     current = scanner->nextToken();
-    if (current->type == Token::ERR) {
-        throw runtime_error("Error léxico");
-    }
+    previous = nullptr;
 }
 
 bool Parser::match(Token::Type ttype) {
@@ -33,13 +25,13 @@ bool Parser::check(Token::Type ttype) {
 
 bool Parser::advance() {
     if (!isAtEnd()) {
-        Token* temp = current;
         if (previous) delete previous;
+        previous = current;
         current = scanner->nextToken();
-        previous = temp;
-
-        if (check(Token::ERR)) {
-            throw runtime_error("Error lexico");
+        if (debug) cerr << "[ADV] token=" << previous->text << " type=" << previous->type << endl;
+        if (current->type == Token::ERR) {
+            cout << "Lexical Error: " << current->text << endl;
+            exit(1);
         }
         return true;
     }
@@ -47,240 +39,352 @@ bool Parser::advance() {
 }
 
 bool Parser::isAtEnd() {
-    return (current->type == Token::END);
+    return current->type == Token::END;
 }
 
-
-// =============================
-// Reglas gramaticales
-// =============================
+Token* Parser::consume(Token::Type type, string message) {
+    if (check(type)) {
+        advance();
+        return previous;
+    }
+    cout << "Syntax Error: " << message << " Found: " << current->text << endl;
+    exit(1);
+}
 
 Program* Parser::parseProgram() {
     Program* p = new Program();
-    if(check(Token::VAR)) {
-        p->vdlist.push_back(parseVarDec());
-        while(match(Token::SEMICOL)) {
-            if(check(Token::VAR)) {
-                p->vdlist.push_back(parseVarDec());
-            }
-        }
+    while (!isAtEnd()) {
+        if (debug) cerr << "[PARSER] parseDeclaration inicio token=" << current->text << endl;
+        p->addItem(parseDeclaration());
     }
-    if(check(Token::FUN)) {
-        p->fdlist.push_back(parseFunDec());
-        while(check(Token::FUN)){
-                p->fdlist.push_back(parseFunDec());
-            }
-        }
-    cout << "Parser exitoso" << endl;
     return p;
 }
 
-VarDec* Parser::parseVarDec(){
-    VarDec* vd = new VarDec();
-    match(Token::VAR);
-    match(Token::ID);
-    vd->type = previous->text;
-    match(Token::ID);
-    vd->vars.push_back(previous->text);
-    while(match(Token::COMA)) {
-        match(Token::ID);
-        vd->vars.push_back(previous->text);
-    }
-    return vd;
+Node* Parser::parseDeclaration() {
+    if (check(Token::FN)) return parseFunDec();
+    if (check(Token::LET)) return parseVarDec(true);
+    cout << "Error: se esperaba declaración (fn / let)" << endl;
+    exit(1);
 }
 
-FunDec *Parser::parseFunDec() {
-    FunDec* fd = new FunDec();
-    match(Token::FUN);
-    match(Token::ID);
-    fd->tipo = previous->text;
-    match(Token::ID);
-    fd->nombre = previous->text;
-    match(Token::LPAREN);
-    if(check(Token::ID)) {
-        while(match(Token::ID)) {
-            fd->Ptipos.push_back(previous->text);
-            match(Token::ID);
-            fd->Pnombres.push_back(previous->text);
-            match(Token::COMA);
-        }
-    }
-    match(Token::RPAREN);
-    fd->cuerpo = parseBody();
-    match(Token::ENDFUN);
-    return fd;
+FunDec* Parser::parseFunDec() {
+    consume(Token::FN, "se esperaba 'fn'");
+    string name = consume(Token::ID, "se esperaba nombre de función")->text;
+    if (debug) cerr << "[PARSER] FunDec nombre=" << name << endl;
+    consume(Token::LPAREN, "se esperaba '('");
+    vector<pair<string, DataType>> params = parseParams();
+    consume(Token::RPAREN, "se esperaba ')'");
+    DataType ret = DataType::VOID;
+    if (match(Token::ARROW)) ret = parseType();
+    bool prev = inFunction;
+    inFunction = true;
+    Block* body = parseBlock();
+    inFunction = prev;
+    return new FunDec(name, params, ret, body);
 }
 
+// Declaración variable (global o local) con o sin inferencia
+VarDec* Parser::parseVarDec(bool global) {
+    consume(Token::LET, "se esperaba 'let'");
+    bool isMut = match(Token::MUT);
+    string name = consume(Token::ID, "se esperaba identificador")->text;
+    if (debug) cerr << "[PARSER] VarDec nombre=" << name << " global=" << (global?"si":"no") << endl;
 
-
-Body* Parser::parseBody(){
-    Body* b = new Body();
-    if(check(Token::VAR)) {
-        b->declarations.push_back(parseVarDec());
-        while(match(Token::SEMICOL)) {
-            if(check(Token::VAR)) {
-                b->declarations.push_back(parseVarDec());
-            }
+    DataType type = DataType::UNKNOWN;
+    Exp* init = nullptr;
+    if (match(Token::COLON)) {
+        type = parseType();
+        if (match(Token::ASSIGN)) {
+            init = parseExpression();
         }
+    } else if (match(Token::ASSIGN)) { // inferencia
+        init = parseExpression();
+    } else {
+        // Si no hay tipo y tampoco inicializador ⇒ error (inferencia requiere '=' )
+        cout << "Error: inferencia requiere inicializador" << endl; exit(1);
     }
-    b->StmList.push_back(parseStm());
-    while(match(Token::SEMICOL)) {
-        b->StmList.push_back(parseStm());
+    consume(Token::SEMICOL, "se esperaba ';'");
+    return new VarDec(name, type, init, isMut, global);
+}
+
+DataType Parser::parseType() {
+    // Consumir prefijos de puntero; por ahora los tratamos como I64 (direcciones)
+    bool hasPtr = false;
+    while (check(Token::PTR_MUT) || check(Token::PTR_CONST)) { advance(); hasPtr = true; }
+    if (match(Token::I32)) return hasPtr ? DataType::I64 : DataType::I32; // puntero a i32 -> dirección
+    if (match(Token::I64)) return DataType::I64;
+    if (match(Token::F32)) return hasPtr ? DataType::I64 : DataType::F32;
+    if (match(Token::F64)) return hasPtr ? DataType::I64 : DataType::F64;
+    if (match(Token::BOOL)) return hasPtr ? DataType::I64 : DataType::BOOL;
+    cout << "Error: tipo desconocido" << endl; exit(1);
+}
+
+vector<pair<string, DataType>> Parser::parseParams() {
+    vector<pair<string, DataType>> params;
+    if (!check(Token::RPAREN)) {
+        do {
+            string name = consume(Token::ID, "se esperaba nombre de parámetro")->text;
+            consume(Token::COLON, "se esperaba ':'");
+            DataType t = parseType();
+            params.push_back({name, t});
+        } while (match(Token::COMA));
     }
+    return params;
+}
+
+Block* Parser::parseBlock() {
+    consume(Token::LBRACE, "se esperaba '{'");
+    Block* b = new Block();
+    while (!check(Token::RBRACE) && !isAtEnd()) {
+        if (debug) cerr << "[PARSER] parseStatement dentro de bloque token=" << current->text << endl;
+        b->addStm(parseStatement());
+    }
+    consume(Token::RBRACE, "se esperaba '}'");
     return b;
 }
 
-Stm* Parser::parseStm() {
-    Stm* a;
-    Exp* e;
-    string variable;
-    Body* tb = nullptr;
-    Body* fb = nullptr;
-    if(match(Token::ID)){
-        variable = previous->text;
-        match(Token::ASSIGN);
-        e = parseCE();
-        return new AssignStm(variable,e);
-    }
-    else if(match(Token::PRINT)){
-        match(Token::LPAREN);
-        e = parseCE();
-        match(Token::RPAREN);
-        return new PrintStm(e);
-    }
-    else if(match(Token::RETURN)) {
-        ReturnStm* r  = new ReturnStm();
-        match(Token::LPAREN);
-        r->e = parseCE();
-        match(Token::RPAREN);
-        return r;
-    }
-else if (match(Token::IF)) {
-        e = parseCE();
-        if (!match(Token::THEN)) {
-            cout << "Error: se esperaba 'then' después de la expresión." << endl;
-            exit(1);
-        }
-        tb = parseBody();
-        if (match(Token::ELSE)) {
-            fb = parseBody();
-        }
-        if (!match(Token::ENDIF)) {
-            cout << "Error: se esperaba 'endif' al final de la declaración de if." << endl;
-            exit(1);
-        }
-        a = new IfStm(e, tb, fb);
-    }
-    else if (match(Token::WHILE)) {
-        e = parseCE();
-        if (!match(Token::DO)) {
-            cout << "Error: se esperaba 'do' después de la expresión." << endl;
-            exit(1);
-        }
-        tb = parseBody();
-        if (!match(Token::ENDWHILE)) {
-            cout << "Error: se esperaba 'endwhile' al final de la declaración." << endl;
-            exit(1);
-        }
-        a = new WhileStm(e, tb);
-    }
-    else{
-        throw runtime_error("Error sintáctico");
-    }
-    return a;
-}
+Stm* Parser::parseStatement() {
+    if (check(Token::IF)) return parseIfStm();
+    if (check(Token::WHILE)) return parseWhileStm();
+    if (check(Token::FOR)) return parseForStm();
+    if (check(Token::RETURN)) return parseReturnStm();
+    if (check(Token::PRINTLN)) return parsePrintlnStm();
+    if (check(Token::LBRACE)) return parseBlock();
+    if (check(Token::LET)) return parseVarDec(false);
+    if (debug) cerr << "[PARSER] parseStatement expresión token=" << current->text << endl;
 
-Exp* Parser::parseCE() {
-    Exp* l = parseBE();
-    if (match(Token::LE)) {
-        BinaryOp op = LE_OP;
-        Exp* r = parseBE();
-        l = new BinaryExp(l, r, op);
-    }
-    return l;
-}
-
-
-Exp* Parser::parseBE() {
-    Exp* l = parseE();
-    while (match(Token::PLUS) || match(Token::MINUS)) {
-        BinaryOp op;
-        if (previous->type == Token::PLUS){
-            op = PLUS_OP;
-        }
-        else{
-            op = MINUS_OP;
-        }
-        Exp* r = parseE();
-        l = new BinaryExp(l, r, op);
-    }
-    return l;
-}
-
-
-Exp* Parser::parseE() {
-    Exp* l = parseT();
-    while (match(Token::MUL) || match(Token::DIV)) {
-        BinaryOp op;
-        if (previous->type == Token::MUL){
-            op = MUL_OP;
-        }
-        else{
-            op = DIV_OP;
-        }
-        Exp* r = parseT();
-        l = new BinaryExp(l, r, op);
-    }
-    return l;
-}
-
-
-Exp* Parser::parseT() {
-    Exp* l = parseF();
-    if (match(Token::POW)) {
-        BinaryOp op = POW_OP;
-        Exp* r = parseF();
-        l = new BinaryExp(l, r, op);
-    }
-    return l;
-}
-
-Exp* Parser::parseF() {
-    Exp* e;
-    string nom;
-    if (match(Token::NUM)) {
-        return new NumberExp(stoi(previous->text));
-    }
-    else if (match(Token::TRUE)) {
-        return new NumberExp(1);
-    }
-    else if (match(Token::FALSE)) {
-        return new NumberExp(0);
-    }
-    else if (match(Token::LPAREN))
-    {
-        e = parseCE();
-        match(Token::RPAREN);
-        return e;
-    }
-    else if (match(Token::ID)) {
-        nom = previous->text;
-        if(check(Token::LPAREN)) {
-            match(Token::LPAREN);
-            FcallExp* fcall = new FcallExp();
-            fcall->nombre = nom;
-            fcall->argumentos.push_back(parseCE());
-            while(match(Token::COMA)) {
-                fcall->argumentos.push_back(parseCE());
+    Exp* expr = parseExpression();
+    Token* opToken = nullptr;
+    if (match(Token::ASSIGN) || match(Token::PLUS_ASSIGN) || match(Token::MINUS_ASSIGN) ||
+        match(Token::MUL_ASSIGN) || match(Token::DIV_ASSIGN) || match(Token::MOD_ASSIGN)) {
+        opToken = previous;
+        Exp* rhs = parseExpression();
+        if (opToken->type != Token::ASSIGN) {
+            BinaryOp bop;
+            switch (opToken->type) {
+                case Token::PLUS_ASSIGN: bop = BinaryOp::PLUS_OP; break;
+                case Token::MINUS_ASSIGN: bop = BinaryOp::MINUS_OP; break;
+                case Token::MUL_ASSIGN: bop = BinaryOp::MUL_OP; break;
+                case Token::DIV_ASSIGN: bop = BinaryOp::DIV_OP; break;
+                case Token::MOD_ASSIGN: bop = BinaryOp::MOD_OP; break;
+                default: bop = BinaryOp::PLUS_OP; break;
             }
-            match(Token::RPAREN);
-            return fcall;
+            rhs = new BinaryExp(expr, rhs, bop);
         }
-        else {
-            return new IdExp(nom);
+        consume(Token::SEMICOL, "se esperaba ';'");
+        return new AssignStm(expr, rhs);
+    }
+    if (inFunction && check(Token::RBRACE)) {
+        // retorno implícito
+        return new ReturnStm(expr);
+    }
+    consume(Token::SEMICOL, "se esperaba ';'");
+    return new ExprStm(expr);
+}
+
+IfStm* Parser::parseIfStm() {
+    consume(Token::IF, "Expected if");
+    Exp* condition = parseExpression();
+    Block* thenBlock = parseBlock();
+    Stm* elseBlock = nullptr;
+    if (match(Token::ELSE)) {
+        if (check(Token::IF)) elseBlock = parseIfStm();
+        else elseBlock = parseBlock();
+    }
+    return new IfStm(condition, thenBlock, elseBlock);
+}
+
+WhileStm* Parser::parseWhileStm() {
+    consume(Token::WHILE, "Expected while");
+    Exp* condition = parseExpression();
+    Block* block = parseBlock();
+    return new WhileStm(condition, block);
+}
+
+ForStm* Parser::parseForStm() {
+    consume(Token::FOR, "Expected for");
+    string var = consume(Token::ID, "Expected loop variable")->text;
+    if (debug) cerr << "[PARSER] For loop var=" << var << endl;
+    consume(Token::IN, "Expected in");
+    Exp* start = parseExpression();
+    consume(Token::DOTDOT, "Expected ..");
+    Exp* end = parseExpression();
+    Block* block = parseBlock();
+    return new ForStm(var, start, end, block);
+}
+
+ReturnStm* Parser::parseReturnStm() {
+    consume(Token::RETURN, "Expected return");
+    Exp* expr = nullptr;
+    if (!check(Token::SEMICOL)) {
+        expr = parseExpression();
+    }
+    consume(Token::SEMICOL, "Expected ;");
+    return new ReturnStm(expr);
+}
+
+PrintStm* Parser::parsePrintlnStm() {
+    consume(Token::PRINTLN, "se esperaba println!");
+    consume(Token::LPAREN, "se esperaba '('");
+    vector<Exp*> args;
+    string format = ""; // puede quedar vacío
+    if (!check(Token::RPAREN)) {
+        if (check(Token::STRING)) { // formato + opcionales expresiones
+            format = consume(Token::STRING, "se esperaba string")->text;
+            if (debug) cerr << "[PARSER] Print formato=" << format << endl;
+            // El literal incluye comillas; removerlas para facilitar generación de ensamblador
+            if (format.size() >= 2 && format.front() == '"' && format.back() == '"') {
+                format = format.substr(1, format.size() - 2);
             }
+            if (match(Token::COMA)) {
+                args = parseArgs();
+            }
+        } else { // solo una expresión
+            args.push_back(parseExpression());
+        }
     }
-    else {
-        throw runtime_error("Error sintáctico");
+    consume(Token::RPAREN, "se esperaba ')'");
+    consume(Token::SEMICOL, "se esperaba ';'");
+    return new PrintStm(format, args);
+}
+
+Exp* Parser::parseExpression() {
+    return parseLogicOr();
+}
+
+Exp* Parser::parseLogicOr() {
+    Exp* left = parseLogicAnd();
+    while (match(Token::OR)) {
+        Exp* right = parseLogicAnd();
+        left = new BinaryExp(left, right, BinaryOp::OR_OP);
     }
+    return left;
+}
+
+Exp* Parser::parseLogicAnd() {
+    Exp* left = parseEquality();
+    while (match(Token::AND)) {
+        Exp* right = parseEquality();
+        left = new BinaryExp(left, right, BinaryOp::AND_OP);
+    }
+    return left;
+}
+
+Exp* Parser::parseEquality() {
+    Exp* left = parseComparison();
+    while (check(Token::EQ) || check(Token::NEQ)) {
+        BinaryOp op = match(Token::EQ) ? BinaryOp::EQ_OP : BinaryOp::NE_OP;
+        Exp* right = parseComparison();
+        left = new BinaryExp(left, right, op);
+    }
+    return left;
+}
+
+Exp* Parser::parseComparison() {
+    Exp* left = parseTerm();
+    while (check(Token::LT) || check(Token::LE) || check(Token::GT) || check(Token::GE)) {
+        BinaryOp op;
+        if (match(Token::LT)) op = BinaryOp::LT_OP;
+        else if (match(Token::LE)) op = BinaryOp::LE_OP;
+        else if (match(Token::GT)) op = BinaryOp::GT_OP;
+        else op = BinaryOp::GE_OP;
+        Exp* right = parseTerm();
+        left = new BinaryExp(left, right, op);
+    }
+    return left;
+}
+
+Exp* Parser::parseTerm() {
+    Exp* left = parseFactor();
+    while (check(Token::PLUS) || check(Token::MINUS)) {
+        BinaryOp op = match(Token::PLUS) ? BinaryOp::PLUS_OP : BinaryOp::MINUS_OP;
+        Exp* right = parseFactor();
+        left = new BinaryExp(left, right, op);
+    }
+    return left;
+}
+
+Exp* Parser::parseFactor() {
+    Exp* left = parsePower();
+    while (check(Token::MUL) || check(Token::DIV) || check(Token::MOD)) {
+        BinaryOp op;
+        if (match(Token::MUL)) {
+            op = BinaryOp::MUL_OP;
+        } else if (match(Token::DIV)) {
+            op = BinaryOp::DIV_OP;
+        } else if (match(Token::MOD)) {
+            op = BinaryOp::MOD_OP; // ahora consumimos correctamente '%'
+        } else {
+            // No debería ocurrir, evitar loop infinito
+            cout << "Error interno: operador factor inesperado" << endl; exit(1);
+        }
+        Exp* right = parsePower();
+        left = new BinaryExp(left, right, op);
+    }
+    return left;
+}
+
+Exp* Parser::parsePower() {
+    Exp* left = parseUnary();
+    while (match(Token::POW)) {
+        Exp* right = parseUnary();
+        left = new BinaryExp(left, right, BinaryOp::POW_OP);
+    }
+    return left;
+}
+
+Exp* Parser::parseUnary() {
+    if (match(Token::MINUS)) return new UnaryExp(UnaryOp::MINUS_OP, parseUnary());
+    if (match(Token::NOT)) return new UnaryExp(UnaryOp::NOT_OP, parseUnary());
+    if (match(Token::MUL)) return new UnaryExp(UnaryOp::DEREF_OP, parseUnary());
+    if (match(Token::AMP)) return new UnaryExp(UnaryOp::ADDR_OP, parseUnary());
+    if (match(Token::AMP_MUT)) return new UnaryExp(UnaryOp::ADDR_MUT_OP, parseUnary());
+    return parseCall();
+}
+
+Exp* Parser::parseCall() {
+    Exp* expr = parsePrimary();
+    while (true) {
+        if (match(Token::LPAREN)) {
+            vector<Exp*> args = parseArgs();
+            consume(Token::RPAREN, "Expected )");
+            if (IdExp* id = dynamic_cast<IdExp*>(expr)) {
+                expr = new CallExp(id->id, args);
+            } else {
+                cout << "Error: Expected function name" << endl;
+                exit(1);
+            }
+        } else if (match(Token::AS)) {
+            DataType type = parseType();
+            expr = new CastExp(expr, type);
+        } else {
+            break;
+        }
+    }
+    return expr;
+}
+
+Exp* Parser::parsePrimary() {
+    if (match(Token::FALSE)) return new BoolExp(false);
+    if (match(Token::TRUE)) return new BoolExp(true);
+    if (match(Token::NUM)) return new NumberExp(previous->text, DataType::I32);
+    if (match(Token::FLOAT)) return new NumberExp(previous->text, DataType::F64);
+    if (match(Token::STRING)) return new StringExp(previous->text);
+    if (match(Token::ID)) return new IdExp(previous->text);
+    if (match(Token::LPAREN)) {
+        Exp* inner = parseExpression();
+        consume(Token::RPAREN, "se esperaba ')'");
+        return inner;
+    }
+    cout << "Error: token inesperado " << current->text << endl; exit(1);
+}
+
+vector<Exp*> Parser::parseArgs() {
+    vector<Exp*> args;
+    if (!check(Token::RPAREN)) {
+        do {
+            args.push_back(parseExpression());
+        } while (match(Token::COMA));
+    }
+    return args;
 }

@@ -1,29 +1,61 @@
-#ifndef PARSER_H       
+#ifndef PARSER_H
 #define PARSER_H
 
-#include "scanner.h"    // Incluye la definición del escáner (provee tokens al parser)
-#include "ast.h"        // Incluye las definiciones para construir el Árbol de Sintaxis Abstracta (AST)
+#include "scanner.h"
+#include "ast.h"
+#include <vector>
+#include <string>
 
 class Parser {
 private:
-    Scanner* scanner;       // Puntero al escáner, de donde se leen los tokens
-    Token *current, *previous; // Punteros al token actual y al anterior
-    bool match(Token::Type ttype);   // Verifica si el token actual coincide con un tipo esperado y avanza si es así
-    bool check(Token::Type ttype);   // Comprueba si el token actual es de cierto tipo, sin avanzar
-    bool advance();                  // Avanza al siguiente token
-    bool isAtEnd();                  // Comprueba si ya se llegó al final de la entrada
-public:
-    Parser(Scanner* scanner);       
-    Program* parseProgram();
+    Scanner* scanner;
+    Token* current;
+    Token* previous;
+    bool inFunction = false; // para retorno implícito
+    bool debug = false; // modo depuración
+
+    bool match(Token::Type t);
+    bool check(Token::Type t);
+    bool advance();
+    bool isAtEnd();
+    Token* consume(Token::Type t, string msg);
+
+    // Declaraciones / ítems
+    Node* parseDeclaration();
     FunDec* parseFunDec();
-    Body* parseBody();
-    VarDec* parseVarDec();
-    Stm* parseStm();
-    Exp* parseCE();
-    Exp* parseBE();
-    Exp* parseE();
-    Exp* parseT();
-    Exp* parseF();
+    VarDec* parseVarDec(bool global);
+
+    // Tipos y parámetros
+    DataType parseType();
+    vector<pair<string, DataType>> parseParams();
+
+    // Bloques y sentencias
+    Block* parseBlock();
+    Stm* parseStatement();
+    IfStm* parseIfStm();
+    WhileStm* parseWhileStm();
+    ForStm* parseForStm();
+    ReturnStm* parseReturnStm();
+    PrintStm* parsePrintlnStm();
+
+    // Expresiones (precedencia)
+    Exp* parseExpression();
+    Exp* parseLogicOr();
+    Exp* parseLogicAnd();
+    Exp* parseEquality();
+    Exp* parseComparison();
+    Exp* parseTerm();
+    Exp* parseFactor();
+    Exp* parsePower();
+    Exp* parseUnary();
+    Exp* parseCall();
+    Exp* parsePrimary();
+    vector<Exp*> parseArgs();
+
+public:
+    Parser(Scanner* scanner);
+    Program* parseProgram();
+    void setDebug(bool d) { debug = d; }
 };
 
-#endif // PARSER_H      
+#endif // PARSER_H

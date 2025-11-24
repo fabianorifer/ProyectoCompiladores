@@ -1,78 +1,82 @@
 #include "ast.h"
-#include <iostream>
+#include "visitor.h"
 
-using namespace std;
+// BinaryExp
+BinaryExp::BinaryExp(Exp* l, Exp* r, BinaryOp op) : left(l), right(r), op(op) {}
+int BinaryExp::accept(Visitor* visitor) { return visitor->visit(this); }
 
-// ------------------ Exp ------------------
-Exp::~Exp() {}
+// UnaryExp
+UnaryExp::UnaryExp(UnaryOp op, Exp* operand) : op(op), operand(operand) {}
+int UnaryExp::accept(Visitor* visitor) { return visitor->visit(this); }
 
-string Exp::binopToChar(BinaryOp op) {
-    switch (op) {
-        case PLUS_OP:  return "+";
-        case MINUS_OP: return "-";
-        case MUL_OP:   return "*";
-        case DIV_OP:   return "/";
-        case POW_OP:   return "**";
-        case LE_OP:   return "<";
-        default:       return "?";
-    }
-}
+// NumberExp
+NumberExp::NumberExp(string v, DataType t) : value(v), numberType(t) {}
+int NumberExp::accept(Visitor* visitor) { return visitor->visit(this); }
 
-// ------------------ BinaryExp ------------------
-BinaryExp::BinaryExp(Exp* l, Exp* r, BinaryOp o)
-    : left(l), right(r), op(o) {}
+// BoolExp
+BoolExp::BoolExp(bool v) : value(v) {}
+int BoolExp::accept(Visitor* visitor) { return visitor->visit(this); }
 
-    
-BinaryExp::~BinaryExp() {
-    delete left;
-    delete right;
-}
+// StringExp
+StringExp::StringExp(string v) : value(v) {}
+int StringExp::accept(Visitor* visitor) { return visitor->visit(this); }
 
+// IdExp
+IdExp::IdExp(string v) : id(v) {}
+int IdExp::accept(Visitor* visitor) { return visitor->visit(this); }
 
+// CallExp
+CallExp::CallExp(string name, vector<Exp*> args) : funcName(name), args(args) {}
+int CallExp::accept(Visitor* visitor) { return visitor->visit(this); }
 
-// ------------------ NumberExp ------------------
-NumberExp::NumberExp(int v) : value(v) {}
+// CastExp
+CastExp::CastExp(Exp* e, DataType t) : expr(e), targetType(t) {}
+int CastExp::accept(Visitor* visitor) { return visitor->visit(this); }
 
-NumberExp::~NumberExp() {}
+// Block
+Block::Block() {}
+void Block::addStm(Stm* s) { stmts.push_back(s); }
+int Block::accept(Visitor* visitor) { return visitor->visit(this); }
 
+// VarDec
+VarDec::VarDec(string n, DataType t, Exp* i, bool m, bool g) 
+    : name(n), type(t), init(i), isMut(m), isGlobal(g) {}
+int VarDec::accept(Visitor* visitor) { return visitor->visit(this); }
 
-// ------------------idExp ------------------
-IdExp::IdExp(string v) : value(v) {}
+// AssignStm
+AssignStm::AssignStm(Exp* p, Exp* e) : place(p), expr(e) {}
+int AssignStm::accept(Visitor* visitor) { return visitor->visit(this); }
 
-IdExp::~IdExp() {}
+// IfStm
+IfStm::IfStm(Exp* c, Block* t, Stm* e) : condition(c), thenBlock(t), elseBlock(e) {}
+int IfStm::accept(Visitor* visitor) { return visitor->visit(this); }
 
+// WhileStm
+WhileStm::WhileStm(Exp* c, Block* b) : condition(c), block(b) {}
+int WhileStm::accept(Visitor* visitor) { return visitor->visit(this); }
 
-Stm::~Stm(){}
+// ForStm
+ForStm::ForStm(string v, Exp* s, Exp* e, Block* b) 
+    : var(v), start(s), end(e), block(b) {}
+int ForStm::accept(Visitor* visitor) { return visitor->visit(this); }
 
-PrintStm::~PrintStm(){}
+// ReturnStm
+ReturnStm::ReturnStm(Exp* e) : expr(e) {}
+int ReturnStm::accept(Visitor* visitor) { return visitor->visit(this); }
 
-AssignStm::~AssignStm(){}
+// PrintStm
+PrintStm::PrintStm(string f, vector<Exp*> a) : format(f), args(a) {}
+int PrintStm::accept(Visitor* visitor) { return visitor->visit(this); }
 
-IfStm::IfStm(Exp* c, Body* t, Body* e): condition(c), then(t), els(e) {}
+// ExprStm
+ExprStm::ExprStm(Exp* e) : expr(e) {}
+int ExprStm::accept(Visitor* visitor) { return visitor->visit(this); }
 
-WhileStm::WhileStm(Exp* c, Body* t): condition(c), b(t) {}
+// FunDec
+FunDec::FunDec(string n, vector<pair<string, DataType>> p, DataType rt, Block* b)
+    : name(n), params(p), returnType(rt), body(b) {}
+int FunDec::accept(Visitor* visitor) { return visitor->visit(this); }
 
-
-PrintStm::PrintStm(Exp* expresion){
-    e=expresion;
-}
-
-AssignStm::AssignStm(string variable,Exp* expresion){
-    id = variable;
-    e = expresion;
-}
-
-
-
-VarDec::VarDec() {}
-
-VarDec::~VarDec() {}
-
-Body::Body(){
-    declarations=list<VarDec*>();
-    StmList=list<Stm*>();
-}
-
-Body::~Body(){}
-
-
+// Program
+void Program::addItem(Node* item) { items.push_back(item); }
+int Program::accept(Visitor* visitor) { return visitor->visit(this); }

@@ -167,30 +167,38 @@ Token* Scanner::nextToken() {
     
     // Punteros especiales: *mut, *const, &mut
     if (c == '*') {
-        // Verificar *mut o *const
+        // Diferenciar entre operador de desreferencia y prefijo de tipo puntero (*mut / *const)
         int saved = current;
         current++;
-        while (current < input.length() && is_white_space(input[current]))
-            current++;
-        
-        if (current + 2 < input.length()) {
-            string next = input.substr(current, 3);
-            if (next == "mut") {
-                current += 3;
+        // Mirar siguiente palabra sin consumir definitivamente
+        int look = current;
+        while (look < input.length() && is_white_space(input[look])) look++;
+
+        auto isBoundary = [&](int start, int len) -> bool {
+            int pos = start + len;
+            if (pos >= input.length()) return true;
+            char after = input[pos];
+            // Debe terminar en espacio, separador o símbolo de tipo (por simplicidad: espacio o i/f/b)
+            return is_white_space(after);
+        };
+
+        if (look + 2 < input.length()) {
+            string next3 = input.substr(look, 3);
+            if (next3 == "mut" && isBoundary(look, 3)) {
+                current = look + 3;
                 return new Token(Token::PTR_MUT, input, first, current - first);
             }
         }
-        if (current + 4 < input.length()) {
-            string next = input.substr(current, 5);
-            if (next == "const") {
-                current += 5;
+        if (look + 4 < input.length()) {
+            string next5 = input.substr(look, 5);
+            if (next5 == "const" && isBoundary(look, 5)) {
+                current = look + 5;
                 return new Token(Token::PTR_CONST, input, first, current - first);
             }
         }
-        
-        // No es *mut ni *const, es solo *
-        current = saved + 1;
-        return new Token(Token::MUL, c);
+        // Si seguido viene letra / '_' que forma identificador => es desreferencia antes de variable
+        current = saved + 1; // solo consume '*'
+        return new Token(Token::MUL, '*');
     }
     
     if (c == '&') {

@@ -1,0 +1,20 @@
+{
+  "BaseInputs5/input1.s": "Resultado: 15\n41",
+  "BaseInputs5/input2.s": "Counter: 0\nCounter: 1\nCounter: 2\nCounter: 3\nCounter: 4\nSum: 45",
+  "BaseInputs5/input3.s": "Area: 0\n4759161926875873280",
+  "ExtensionsInputs5/input1.s": "Sum: 30\n20",
+  "ExtensionsInputs5/input2.s": "Converted to i64: 100\ni32 to f32: 4631107791820423168\nChained: 4636737291354636288",
+  "ExtensionsInputs5/input3.s": "Result: 1010\n-8944823300390282854",
+  "FunctionInputs3/input1.s": "21",
+  "FunctionInputs3/input2.s": "45",
+  "FunctionInputs3/input3.s": "15",
+  "OptimizationInputs5/input1.s": "100",
+  "OptimizationInputs5/input2.s": "10",
+  "OptimizationInputs5/input3.s": "1",
+  "OptimizationInputs5/input4.s": "5",
+  "OptimizationInputs5/input5.s": "46",
+  "BaseInputs5/input4.s": "Value: 142\n999",
+  "ExtensionsInputs5/input5.s": "Converted: 142\n4617315517961601024\nFinal: 4627026404658118656",
+  "BaseInputs5/input5.s": "Factorial: 120\nProcessed: 70\nCondition met",
+  "ExtensionsInputs5/input4.s": "Output: 4629888066921343659\n0\n4607182418800017408\n4616189618054758400\n4621256167635550208\n4625196817309499392\n1"
+}
