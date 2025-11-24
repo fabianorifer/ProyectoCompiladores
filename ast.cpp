@@ -3,76 +3,69 @@
 
 using namespace std;
 
-// ------------------ Exp ------------------
-Exp::~Exp() {}
+// ============================================
+// TIPOS
+// ============================================
 
-string Exp::binopToChar(BinaryOp op) {
-    switch (op) {
-        case PLUS_OP:  return "+";
-        case MINUS_OP: return "-";
-        case MUL_OP:   return "*";
-        case DIV_OP:   return "/";
-        case POW_OP:   return "**";
-        case LE_OP:   return "<";
-        default:       return "?";
+string BaseType::toString() {
+    switch (kind) {
+        case I32_TYPE:  return "i32";
+        case I64_TYPE:  return "i64";
+        case F32_TYPE:  return "f32";
+        case F64_TYPE:  return "f64";
+        case BOOL_TYPE: return "bool";
+        default:        return "unknown";
     }
 }
 
-// ------------------ BinaryExp ------------------
-BinaryExp::BinaryExp(Exp* l, Exp* r, BinaryOp o)
-    : left(l), right(r), op(o) {}
-
-    
-BinaryExp::~BinaryExp() {
-    delete left;
-    delete right;
+string PointerType::toString() {
+    string prefix = isMutable ? "*mut " : "*const ";
+    return prefix + pointeeType->toString();
 }
 
+// ============================================
+// OPERADORES
+// ============================================
 
-
-// ------------------ NumberExp ------------------
-NumberExp::NumberExp(int v) : value(v) {}
-
-NumberExp::~NumberExp() {}
-
-
-// ------------------idExp ------------------
-IdExp::IdExp(string v) : value(v) {}
-
-IdExp::~IdExp() {}
-
-
-Stm::~Stm(){}
-
-PrintStm::~PrintStm(){}
-
-AssignStm::~AssignStm(){}
-
-IfStm::IfStm(Exp* c, Body* t, Body* e): condition(c), then(t), els(e) {}
-
-WhileStm::WhileStm(Exp* c, Body* t): condition(c), b(t) {}
-
-
-PrintStm::PrintStm(Exp* expresion){
-    e=expresion;
+string Exp::binopToString(BinaryOp op) {
+    switch (op) {
+        case PLUS_OP:   return "+";
+        case MINUS_OP:  return "-";
+        case MUL_OP:    return "*";
+        case DIV_OP:    return "/";
+        case MOD_OP:    return "%";
+        case POW_OP:    return "**";
+        case LT_OP:     return "<";
+        case LE_OP:     return "<=";
+        case GT_OP:     return ">";
+        case GE_OP:     return ">=";
+        case EQ_OP:     return "==";
+        case NE_OP:     return "!=";
+        case AND_OP:    return "&&";
+        case OR_OP:     return "||";
+        default:        return "?";
+    }
 }
 
-AssignStm::AssignStm(string variable,Exp* expresion){
-    id = variable;
-    e = expresion;
+string Exp::unopToString(UnaryOp op) {
+    switch (op) {
+        case NOT_OP:     return "!";
+        case NEG_OP:     return "-";
+        case DEREF_OP:   return "*";
+        case REF_OP:     return "&";
+        case REF_MUT_OP: return "&mut";
+        default:         return "?";
+    }
 }
 
+// ============================================
+// DESTRUCTORES IfExp
+// ============================================
 
-
-VarDec::VarDec() {}
-
-VarDec::~VarDec() {}
-
-Body::Body(){
-    declarations=list<VarDec*>();
-    StmList=list<Stm*>();
+IfExp::~IfExp() {
+    delete condition;
+    delete thenBlock;
+    if (elseBlock) delete elseBlock;
 }
-
-Body::~Body(){}
 
 
