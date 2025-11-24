@@ -20,32 +20,34 @@ int GenCodeVisitor::visit(BinaryExp* exp) {
     out << "  mov r10, [rbp" << scratchOffset << "]" << endl;
     bool leftFloat = false;
     bool rightFloat = false;
-    if (NumberExp* nl = dynamic_cast<NumberExp*>(exp->left)) leftFloat = (nl->value.find('.') != string::npos);
-    if (NumberExp* nr = dynamic_cast<NumberExp*>(exp->right)) rightFloat = (nr->value.find('.') != string::npos);
-    if (IdExp* idl = dynamic_cast<IdExp*>(exp->left)) {
-        auto itL = vars.find(idl->id);
+    // Usar visitor para detectar tipo sin dynamic_cast
+    TypeCheckVisitor tcLeft, tcRight;
+    exp->left->accept(&tcLeft);
+    exp->right->accept(&tcRight);
+    if (tcLeft.isNumberExp) leftFloat = tcLeft.isFloatNumber;
+    if (tcLeft.isIdExp) {
+        auto itL = vars.find(tcLeft.idName);
         if (itL != vars.end() && (itL->second.type == DataType::F64 || itL->second.type == DataType::F32)) leftFloat = true;
     }
-    if (IdExp* idr = dynamic_cast<IdExp*>(exp->right)) {
-        auto itR = vars.find(idr->id);
+    if (tcLeft.isCastExp) {
+        if (tcLeft.castTarget == DataType::F64 || tcLeft.castTarget == DataType::F32) leftFloat = true;
+    }
+    if (tcRight.isNumberExp) rightFloat = tcRight.isFloatNumber;
+    if (tcRight.isIdExp) {
+        auto itR = vars.find(tcRight.idName);
         if (itR != vars.end() && (itR->second.type == DataType::F64 || itR->second.type == DataType::F32)) rightFloat = true;
     }
-    if (CastExp* cl = dynamic_cast<CastExp*>(exp->left)) {
-        if (cl->targetType == DataType::F64 || cl->targetType == DataType::F32) leftFloat = true;
-    }
-    if (CastExp* cr = dynamic_cast<CastExp*>(exp->right)) {
-        if (cr->targetType == DataType::F64 || cr->targetType == DataType::F32) rightFloat = true;
+    if (tcRight.isCastExp) {
+        if (tcRight.castTarget == DataType::F64 || tcRight.castTarget == DataType::F32) rightFloat = true;
     }
     switch (exp->op) {
         case BinaryOp::PLUS_OP:
             out << "  add rax, r10" << endl; break;
         case BinaryOp::MINUS_OP: {
             // Normalizar doble negación si el parser produjo right = Unary(-, Number)
-            if (UnaryExp* u = dynamic_cast<UnaryExp*>(exp->right)) {
-                if (u->op == UnaryOp::MINUS_OP) {
-                    // right actualmente en rax es -(operand); revertir a +(operand)
-                    out << "  neg rax" << endl;
-                }
+            if (tcRight.isUnaryExp && tcRight.unaryOp == UnaryOp::MINUS_OP) {
+                // right actualmente en rax es -(operand); revertir a +(operand)
+                out << "  neg rax" << endl;
             }
             out << "  mov rcx, r10" << endl;
             out << "  sub rcx, rax" << endl;
@@ -153,10 +155,12 @@ int GenCodeVisitor::visit(UnaryExp* exp) {
         case UnaryOp::ADDR_OP:
         case UnaryOp::ADDR_MUT_OP: {
             // operand result in rax currently contains VALUE; need address if IdExp
-            if (IdExp* id = dynamic_cast<IdExp*>(exp->operand)) {
-                auto it = vars.find(id->id);
+            TypeCheckVisitor tcOperand;
+            exp->operand->accept(&tcOperand);
+            if (tcOperand.isIdExp) {
+                auto it = vars.find(tcOperand.idName);
                 if (it != vars.end()) {
-                    if (it->second.global) out << "  lea rax, [rel " << id->id << "]" << endl;
+                    if (it->second.global) out << "  lea rax, [rel " << tcOperand.idName << "]" << endl;
                     else out << "  lea rax, [rbp" << it->second.offset << "]" << endl;
                 }
             } else {
@@ -267,14 +271,23 @@ int GenCodeVisitor::visit(Block* stm) {
 int GenCodeVisitor::visit(VarDec* stm) {
     if (stm->isGlobal) {
         // Defer definición global: etiqueta en .data si init constante
-        if (stm->init && dynamic_cast<NumberExp*>(stm->init)) {
-            out << "section .data" << endl;
-            out << stm->name << ": dq " << dynamic_cast<NumberExp*>(stm->init)->value << endl;
-            out << "section .text" << endl;
-        } else if (stm->init && dynamic_cast<BoolExp*>(stm->init)) {
-            out << "section .data" << endl;
-            out << stm->name << ": dq " << (dynamic_cast<BoolExp*>(stm->init)->value ? 1 : 0) << endl;
-            out << "section .text" << endl;
+        if (stm->init) {
+            TypeCheckVisitor tcInit;
+            stm->init->accept(&tcInit);
+            if (tcInit.isNumberExp) {
+                out << "section .data" << endl;
+                out << stm->name << ": dq " << tcInit.numberValue << endl;
+                out << "section .text" << endl;
+            } else if (tcInit.isBoolExp) {
+                // BoolExp - usar valor extraído
+                out << "section .data" << endl;
+                out << stm->name << ": dq " << (tcInit.boolValue ? 1 : 0) << endl;
+                out << "section .text" << endl;
+            } else {
+                out << "section .data" << endl;
+                out << stm->name << ": dq 0" << endl;
+                out << "section .text" << endl;
+            }
         } else {
             out << "section .data" << endl;
             out << stm->name << ": dq 0" << endl;
@@ -299,33 +312,44 @@ int GenCodeVisitor::visit(VarDec* stm) {
 }
 
 int GenCodeVisitor::visit(AssignStm* stm) {
+    // Primero detectar el tipo de place para manejar deref especialmente
+    TypeCheckVisitor tcPlace;
+    stm->place->accept(&tcPlace);
+    
+    if (tcPlace.isUnaryExp && tcPlace.unaryOp == UnaryOp::DEREF_OP) {
+        // UnaryExp con DEREF_OP - necesita tratamiento especial
+        if (getenv("COMP_DEBUG")) out << "  ; assign via * (deref)" << endl;
+        // Evaluar operand para obtener dirección
+        if (tcPlace.unaryOperand) {
+            tcPlace.unaryOperand->accept(this); // dirección en rax
+            out << "  push rax" << endl; // guardar dirección en stack
+            // Evaluar expresión a asignar
+            stm->expr->accept(this); // valor final en rax
+            out << "  pop rcx" << endl; // recuperar dirección en rcx (caller-saved)
+            out << "  mov [rcx], rax" << endl;
+        } else {
+            out << "  ; ERROR: UnaryExp DEREF sin operand" << endl;
+        }
+        return 0;
+    }
+    
+    // Evaluar expresión primero
     stm->expr->accept(this); // resultado en rax
-    if (IdExp* id = dynamic_cast<IdExp*>(stm->place)) {
-        auto it = vars.find(id->id);
+    
+    if (tcPlace.isIdExp) {
+        auto it = vars.find(tcPlace.idName);
         if (it != vars.end()) {
-            if (getenv("COMP_DEBUG")) out << "  ; assign a id " << id->id << (it->second.global?" (global)":" (local)") << endl;
+            if (getenv("COMP_DEBUG")) out << "  ; assign a id " << tcPlace.idName << (it->second.global?" (global)":" (local)") << endl;
             if (it->second.global) {
-                out << "  mov [rel " << id->id << "], rax" << endl;
+                out << "  mov [rel " << tcPlace.idName << "], rax" << endl;
             } else {
                 out << "  mov [rbp" << it->second.offset << "], rax" << endl;
             }
         } else {
-            out << "  ; asignación a desconocido " << id->id << endl;
+            out << "  ; asignación a desconocido " << tcPlace.idName << endl;
         }
     } else {
-        UnaryExp* ue = dynamic_cast<UnaryExp*>(stm->place);
-        if (ue && ue->op == UnaryOp::DEREF_OP) {
-            if (getenv("COMP_DEBUG")) out << "  ; assign via * (deref)" << endl;
-            // Evaluar operand para obtener dirección y preservarla antes de evaluar expr completa
-            ue->operand->accept(this); // dirección en rax
-            out << "  push rax" << endl; // guardar dirección en stack
-            // Evaluar expresión a asignar
-            stm->expr->accept(this); // valor final en rax
-            out << "  pop rcx" << endl; // recuperar dirección en rcx (caller-saved, seguro)
-            out << "  mov [rcx], rax" << endl;
-        } else {
-            out << "  ; asignación no soportada" << endl;
-        }
+        out << "  ; asignación no soportada" << endl;
     }
     return 0;
 }

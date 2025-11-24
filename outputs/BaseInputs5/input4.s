@@ -13,13 +13,6 @@ main:
   lea rax, [rbp-16]
   mov [rbp-24], rax
   mov rax, [rbp-24]
-  mov rax, [rax]
-  mov r10, rax
-  mov [rbp-8], r10
-  mov rax, 100
-  mov r10, [rbp-8]
-  add rax, r10
-  mov rax, [rbp-24]
   push rax
   mov rax, [rbp-24]
   mov rax, [rax]

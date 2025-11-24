@@ -52,6 +52,57 @@ public:
     virtual int visit(Program* stm) = 0;
 };
 
+// Visitor auxiliar para detectar tipo de expresión sin dynamic_cast
+class TypeCheckVisitor : public Visitor {
+public:
+    bool isNumberExp = false;
+    bool isBoolExp = false;
+    bool isIdExp = false;
+    bool isUnaryExp = false;
+    bool isCastExp = false;
+    bool isFloatNumber = false;
+    bool boolValue = false;
+    string idName = "";
+    string numberValue = "";
+    UnaryOp unaryOp;
+    DataType castTarget;
+    Exp* unaryOperand = nullptr;  // Para extraer operando de UnaryExp
+    
+    int visit(BinaryExp* exp) override { return 0; }
+    int visit(UnaryExp* exp) override { 
+        isUnaryExp = true; 
+        unaryOp = exp->op; 
+        unaryOperand = exp->operand;
+        return 0; 
+    }
+    int visit(NumberExp* exp) override { 
+        isNumberExp = true; 
+        numberValue = exp->value;
+        isFloatNumber = (exp->value.find('.') != string::npos); 
+        return 0; 
+    }
+    int visit(BoolExp* exp) override { 
+        isBoolExp = true; 
+        boolValue = exp->value;
+        return 0; 
+    }
+    int visit(StringExp* exp) override { return 0; }
+    int visit(IdExp* exp) override { isIdExp = true; idName = exp->id; return 0; }
+    int visit(CallExp* exp) override { return 0; }
+    int visit(CastExp* exp) override { isCastExp = true; castTarget = exp->targetType; return 0; }
+    int visit(Block* stm) override { return 0; }
+    int visit(VarDec* stm) override { return 0; }
+    int visit(AssignStm* stm) override { return 0; }
+    int visit(IfStm* stm) override { return 0; }
+    int visit(WhileStm* stm) override { return 0; }
+    int visit(ForStm* stm) override { return 0; }
+    int visit(ReturnStm* stm) override { return 0; }
+    int visit(PrintStm* stm) override { return 0; }
+    int visit(ExprStm* stm) override { return 0; }
+    int visit(FunDec* stm) override { return 0; }
+    int visit(Program* stm) override { return 0; }
+};
+
 class GenCodeVisitor : public Visitor {
 private:
     ostream& out;
