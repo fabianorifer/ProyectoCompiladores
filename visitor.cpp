@@ -4,6 +4,9 @@
 
 using namespace std;
 
+static BaseType inferredI64(I64_TYPE);
+static BaseType inferredF64(F64_TYPE);
+
 // ============================================
 // Métodos accept en clases AST
 // ============================================
@@ -42,10 +45,37 @@ int Program::accept(Visitor* v) { return v->visit(this); }
 // ============================================
 
 GenCodeVisitor::GenCodeVisitor(ostream& output) 
-    : out(output), stackOffset(-8), labelCounter(0), inFunction(false), lastExprType(nullptr) {}
+    : out(output), stackOffset(-8), labelCounter(0), inFunction(false), lastExprType(nullptr), lastExprIsFloat(false) {}
 
 int GenCodeVisitor::generar(Program* program) {
     return program->accept(this);
+}
+
+// Helper methods para identificar tipos sin dynamic_cast
+bool GenCodeVisitor::isFloatType(Type* type) {
+    if (!type) return false;
+    TypeKindVisitor visitor;
+    type->accept(&visitor);
+    return visitor.isBaseType && (visitor.baseKind == F32_TYPE || visitor.baseKind == F64_TYPE);
+}
+
+bool GenCodeVisitor::isPointerType(Type* type) {
+    if (!type) return false;
+    TypeKindVisitor visitor;
+    type->accept(&visitor);
+    return visitor.isPointerType;
+}
+
+BaseTypeKind GenCodeVisitor::getBaseTypeKind(Type* type) {
+    TypeKindVisitor visitor;
+    type->accept(&visitor);
+    return visitor.baseKind;
+}
+
+Type* GenCodeVisitor::getPointeeType(Type* type) {
+    TypeKindVisitor visitor;
+    type->accept(&visitor);
+    return visitor.pointeeType;
 }
 
 // ============================================
@@ -68,19 +98,31 @@ int GenCodeVisitor::visit(PointerType* type) {
 
 int GenCodeVisitor::visit(NumberExp* exp) {
     out << "  movq $" << exp->value << ", %rax\n";
+    lastExprIsFloat = false;
     return 0;
 }
 
 int GenCodeVisitor::visit(FloatExp* exp) {
-    // TODO: Implement proper float support with XMM registers
-    // Por ahora, truncamos a entero
-    out << "  # FloatExp " << exp->value << " (simplified as int)\n";
-    out << "  movq $" << (long long)exp->value << ", %rax\n";
+    // Generar float literal en .data section
+    int floatLabel = labelCounter++;
+    out << "  # FloatExp " << exp->value << "\n";
+    
+    // Necesitamos guardar el literal en .rodata y cargarlo
+    // Por simplicidad, convertimos a bits y usamos movq + movq a xmm
+    // Alternativamente, generamos .LC label en .rodata
+    out << ".section .rodata\n";
+    out << ".LC" << floatLabel << ":\n";
+    out << "  .double " << exp->value << "\n";
+    out << ".text\n";
+    out << "  movsd .LC" << floatLabel << "(%rip), %xmm0\n";
+    
+    lastExprIsFloat = true;
     return 0;
 }
 
 int GenCodeVisitor::visit(BoolExp* exp) {
     out << "  movq $" << (exp->value ? 1 : 0) << ", %rax\n";
+    lastExprIsFloat = false;
     return 0;
 }
 
@@ -91,10 +133,28 @@ int GenCodeVisitor::visit(StringExp* exp) {
 }
 
 int GenCodeVisitor::visit(IdExp* exp) {
+    // Verificar si la variable tiene tipo float
+    bool isFloat = false;
+    if (varTypes.count(exp->id)) {
+        isFloat = isFloatType(varTypes[exp->id]);
+    }
+    
     if (globalVars.count(exp->id)) {
-        out << "  movq " << exp->id << "(%rip), %rax\n";
+        if (isFloat) {
+            out << "  movsd " << exp->id << "(%rip), %xmm0\n";
+            lastExprIsFloat = true;
+        } else {
+            out << "  movq " << exp->id << "(%rip), %rax\n";
+            lastExprIsFloat = false;
+        }
     } else if (localVars.count(exp->id)) {
-        out << "  movq " << localVars[exp->id] << "(%rbp), %rax\n";
+        if (isFloat) {
+            out << "  movsd " << localVars[exp->id] << "(%rbp), %xmm0\n";
+            lastExprIsFloat = true;
+        } else {
+            out << "  movq " << localVars[exp->id] << "(%rbp), %rax\n";
+            lastExprIsFloat = false;
+        }
     } else {
         throw runtime_error("Variable no declarada: " + exp->id);
     }
@@ -145,127 +205,469 @@ int GenCodeVisitor::visit(BinaryExp* exp) {
     long long constResult;
     if (tryEvalConst(exp, constResult)) {
         out << "  movq $" << constResult << ", %rax\n";
+        lastExprIsFloat = false;
         return 0;
     }
     
-    // Caso no constante: generación normal
+    // Evaluar operando izquierdo
     exp->left->accept(this);
-    out << "  pushq %rax\n";
-    exp->right->accept(this);
-    out << "  movq %rax, %rcx\n";
-    out << "  popq %rax\n";
+    bool leftIsFloat = lastExprIsFloat;
     
-    switch (exp->op) {
-        case PLUS_OP:
-            out << "  addq %rcx, %rax\n";
-            break;
-        case MINUS_OP:
-            out << "  subq %rcx, %rax\n";
-            break;
-        case MUL_OP:
-            out << "  imulq %rcx, %rax\n";
-            break;
-        case DIV_OP:
-            out << "  cqto\n";
-            out << "  idivq %rcx\n";
-            break;
-        case MOD_OP:
-            out << "  cqto\n";
-            out << "  idivq %rcx\n";
-            out << "  movq %rdx, %rax\n";
-            break;
-        case POW_OP:
-            out << "  # POW not implemented\n";
-            break;
-            
-        // Relacionales
-        case LT_OP:
-            out << "  cmpq %rcx, %rax\n";
-            out << "  movl $0, %eax\n";
-            out << "  setl %al\n";
-            break;
-        case LE_OP:
-            out << "  cmpq %rcx, %rax\n";
-            out << "  movl $0, %eax\n";
-            out << "  setle %al\n";
-            break;
-        case GT_OP:
-            out << "  cmpq %rcx, %rax\n";
-            out << "  movl $0, %eax\n";
-            out << "  setg %al\n";
-            break;
-        case GE_OP:
-            out << "  cmpq %rcx, %rax\n";
-            out << "  movl $0, %eax\n";
-            out << "  setge %al\n";
-            break;
-        case EQ_OP:
-            out << "  cmpq %rcx, %rax\n";
-            out << "  movl $0, %eax\n";
-            out << "  sete %al\n";
-            break;
-        case NE_OP:
-            out << "  cmpq %rcx, %rax\n";
-            out << "  movl $0, %eax\n";
-            out << "  setne %al\n";
-            break;
-            
-        // Lógicos
-        case AND_OP:
-            out << "  andq %rcx, %rax\n";
-            break;
-        case OR_OP:
-            out << "  orq %rcx, %rax\n";
-            break;
+    // Guardar resultado izquierdo
+    if (leftIsFloat) {
+        // Para floats: mover xmm0 a xmm2 para preservarlo
+        out << "  movsd %xmm0, %xmm2\n";
+    } else {
+        // Para enteros: usar stack
+        out << "  pushq %rax\n";
+    }
+    
+    // Evaluar operando derecho
+    exp->right->accept(this);
+    bool rightIsFloat = lastExprIsFloat;
+    
+    // Determinar si el resultado es float
+    bool resultIsFloat = leftIsFloat || rightIsFloat;
+    
+    if (resultIsFloat) {
+        // ===== OPERACIONES CON FLOATS =====
+        // Ahora: left está en xmm2 (si era float) o en stack (si era int)
+        //       right está en xmm0 (si es float) o en rax (si es int)
+        
+        // Convertir operandos si es necesario
+        if (rightIsFloat && !leftIsFloat) {
+            // left (int) está en stack, right (float) está en xmm0
+            out << "  movsd %xmm0, %xmm1\n";  // Guardar right en xmm1
+            out << "  popq %rax\n";             // Recuperar left
+            out << "  cvtsi2sd %rax, %xmm0\n"; // Convertir left a float en xmm0
+            // Ahora: xmm0=left(float), xmm1=right(float)
+        } else if (!rightIsFloat && leftIsFloat) {
+            // left (float) está en xmm2, right (int) está en rax
+            out << "  cvtsi2sd %rax, %xmm1\n"; // Convertir right a float en xmm1
+            out << "  movsd %xmm2, %xmm0\n";   // Mover left a xmm0
+            // Ahora: xmm0=left(float), xmm1=right(float)
+        } else {
+            // Ambos son float: left en xmm2, right en xmm0
+            out << "  movsd %xmm0, %xmm1\n";   // right a xmm1
+            out << "  movsd %xmm2, %xmm0\n";   // left a xmm0
+            // Ahora: xmm0=left(float), xmm1=right(float)
+        }
+        
+        // Realizar operación (xmm0 = xmm0 OP xmm1)
+        switch (exp->op) {
+            case PLUS_OP:  out << "  addsd %xmm1, %xmm0\n"; break;
+            case MINUS_OP: out << "  subsd %xmm1, %xmm0\n"; break;
+            case MUL_OP:   out << "  mulsd %xmm1, %xmm0\n"; break;
+            case DIV_OP:   out << "  divsd %xmm1, %xmm0\n"; break;
+                
+            // Comparaciones con floats
+            case LT_OP:
+            case LE_OP:
+            case GT_OP:
+            case GE_OP:
+            case EQ_OP:
+            case NE_OP:
+                out << "  ucomisd %xmm1, %xmm0\n";
+                out << "  movl $0, %eax\n";
+                switch (exp->op) {
+                    case LT_OP: out << "  setb %al\n"; break;
+                    case LE_OP: out << "  setbe %al\n"; break;
+                    case GT_OP: out << "  seta %al\n"; break;
+                    case GE_OP: out << "  setae %al\n"; break;
+                    case EQ_OP: out << "  sete %al\n"; break;
+                    case NE_OP: out << "  setne %al\n"; break;
+                    default: break;
+                }
+                lastExprIsFloat = false;  // Resultado de comparación es bool (en GPR)
+                return 0;
+                
+            default:
+                out << "  # Operación no soportada para floats\n";
+                break;
+        }
+        lastExprIsFloat = true;
+        
+    } else {
+        // ===== OPERACIONES CON ENTEROS =====
+        out << "  movq %rax, %rcx\n";
+        out << "  popq %rax\n";
+        
+        switch (exp->op) {
+            case PLUS_OP:
+                out << "  addq %rcx, %rax\n";
+                break;
+            case MINUS_OP:
+                out << "  subq %rcx, %rax\n";
+                break;
+            case MUL_OP:
+                out << "  imulq %rcx, %rax\n";
+                break;
+            case DIV_OP:
+                out << "  cqto\n";
+                out << "  idivq %rcx\n";
+                break;
+            case MOD_OP:
+                out << "  cqto\n";
+                out << "  idivq %rcx\n";
+                out << "  movq %rdx, %rax\n";
+                break;
+            case POW_OP:
+                out << "  # POW not implemented\n";
+                break;
+                
+            // Relacionales
+            case LT_OP:
+                out << "  cmpq %rcx, %rax\n";
+                out << "  movl $0, %eax\n";
+                out << "  setl %al\n";
+                break;
+            case LE_OP:
+                out << "  cmpq %rcx, %rax\n";
+                out << "  movl $0, %eax\n";
+                out << "  setle %al\n";
+                break;
+            case GT_OP:
+                out << "  cmpq %rcx, %rax\n";
+                out << "  movl $0, %eax\n";
+                out << "  setg %al\n";
+                break;
+            case GE_OP:
+                out << "  cmpq %rcx, %rax\n";
+                out << "  movl $0, %eax\n";
+                out << "  setge %al\n";
+                break;
+            case EQ_OP:
+                out << "  cmpq %rcx, %rax\n";
+                out << "  movl $0, %eax\n";
+                out << "  sete %al\n";
+                break;
+            case NE_OP:
+                out << "  cmpq %rcx, %rax\n";
+                out << "  movl $0, %eax\n";
+                out << "  setne %al\n";
+                break;
+                
+            // Lógicos
+            case AND_OP:
+                out << "  andq %rcx, %rax\n";
+                break;
+            case OR_OP:
+                out << "  orq %rcx, %rax\n";
+                break;
+        }
+        lastExprIsFloat = false;
     }
     return 0;
 }
 
 int GenCodeVisitor::visit(UnaryExp* exp) {
-    exp->operand->accept(this);
-    
     switch (exp->op) {
         case NOT_OP:
+            exp->operand->accept(this);
             out << "  cmpq $0, %rax\n";
             out << "  movl $0, %eax\n";
             out << "  sete %al\n";
+            lastExprIsFloat = false;
             break;
+            
         case NEG_OP:
-            out << "  negq %rax\n";
+            exp->operand->accept(this);
+            if (lastExprIsFloat) {
+                // Negar float: XOR con bit de signo
+                out << "  # Negar float/double\n";
+                out << "  movq $0x8000000000000000, %rax\n";
+                out << "  movq %rax, %xmm1\n";
+                out << "  xorpd %xmm1, %xmm0\n";
+            } else {
+                out << "  negq %rax\n";
+            }
             break;
-        case DEREF_OP:
-            out << "  movq (%rax), %rax\n";
+            
+        case DEREF_OP: {
+            // Desreferenciar puntero
+            exp->operand->accept(this);  // Dirección en %rax
+            
+            // Determinar tipo apuntado desde varTypes
+            IdExp* idOp = exp->operand->asIdExp();
+            if (idOp && varTypes.count(idOp->id)) {
+                Type* varType = varTypes[idOp->id];
+                if (isPointerType(varType)) {
+                    Type* pointeeType = getPointeeType(varType);
+                    if (pointeeType) {
+                        TypeKindVisitor pkVisitor;
+                        pointeeType->accept(&pkVisitor);
+                        if (pkVisitor.isBaseType) {
+                            switch (pkVisitor.baseKind) {
+                                case I32_TYPE:
+                                    out << "  movl (%rax), %eax\n";
+                                    lastExprIsFloat = false;
+                                    break;
+                                case I64_TYPE:
+                                    out << "  movq (%rax), %rax\n";
+                                    lastExprIsFloat = false;
+                                    break;
+                                case F32_TYPE:
+                                    out << "  movss (%rax), %xmm0\n";
+                                    lastExprIsFloat = true;
+                                    break;
+                                case F64_TYPE:
+                                    out << "  movsd (%rax), %xmm0\n";
+                                    lastExprIsFloat = true;
+                                    break;
+                                case BOOL_TYPE:
+                                    out << "  movzbl (%rax), %eax\n";
+                                    lastExprIsFloat = false;
+                                    break;
+                            }
+                        } else {
+                            // Puntero a puntero
+                            out << "  movq (%rax), %rax\n";
+                            lastExprIsFloat = false;
+                        }
+                    } else {
+                        // Tipo desconocido, asumir i64
+                        out << "  movq (%rax), %rax\n";
+                        lastExprIsFloat = false;
+                    }
+                } else {
+                    // Tipo desconocido, asumir i64
+                    out << "  movq (%rax), %rax\n";
+                    lastExprIsFloat = false;
+                }
+            } else {
+                // No se pudo determinar el tipo, asumir i64
+                out << "  movq (%rax), %rax\n";
+                lastExprIsFloat = false;
+            }
             break;
+        }
+            
         case REF_OP:
-        case REF_MUT_OP:
-            // TODO: implementar direcciones
-            out << "  # REF not implemented\n";
+        case REF_MUT_OP: {
+            // Obtener dirección de variable
+            IdExp* idOp = exp->operand->asIdExp();
+            if (idOp) {
+                string varName = idOp->id;
+                if (localVars.count(varName)) {
+                    int offset = localVars[varName];
+                    out << "  leaq " << offset << "(%rbp), %rax\n";
+                } else if (globalVars.count(varName)) {
+                    out << "  leaq " << varName << "(%rip), %rax\n";
+                } else {
+                    out << "  # Error: variable no encontrada: " << varName << "\n";
+                }
+            } else {
+                // Expresión compleja: evaluar y su dirección ya debería estar en %rax
+                exp->operand->accept(this);
+            }
+            lastExprIsFloat = false;  // Los punteros son enteros
             break;
+        }
     }
     return 0;
 }
 
 int GenCodeVisitor::visit(FunCallExp* exp) {
-    vector<string> argRegs = {"%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"};
-    
-    int numArgs = exp->args.size();
-    for (int i = 0; i < numArgs && i < 6; i++) {
-        exp->args[i]->accept(this);
-        out << "  movq %rax, " << argRegs[i] << "\n";
+    vector<string> intArgRegs = {"%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"};
+    vector<string> floatArgRegs = {"%xmm0", "%xmm1", "%xmm2", "%xmm3", "%xmm4", "%xmm5", "%xmm6", "%xmm7"};
+    size_t intArgIndex = 0;
+    size_t floatArgIndex = 0;
+    int stackArgBytes = 0;
+
+    for (Exp* arg : exp->args) {
+        arg->accept(this);
+
+        if (lastExprIsFloat) {
+            if (floatArgIndex < floatArgRegs.size()) {
+                out << "  movsd %xmm0, " << floatArgRegs[floatArgIndex++] << "\n";
+            } else {
+                out << "  subq $8, %rsp\n";
+                out << "  movsd %xmm0, (%rsp)\n";
+                stackArgBytes += 8;
+            }
+        } else {
+            if (intArgIndex < intArgRegs.size()) {
+                out << "  movq %rax, " << intArgRegs[intArgIndex++] << "\n";
+            } else {
+                out << "  pushq %rax\n";
+                stackArgBytes += 8;
+            }
+        }
     }
-    
+
+    out << "  movl $0, %eax\n";
     out << "  call " << exp->funName << "\n";
+
+    if (stackArgBytes > 0) {
+        out << "  addq $" << stackArgBytes << ", %rsp\n";
+    }
     return 0;
 }
 
 int GenCodeVisitor::visit(CastExp* exp) {
-    // TODO: Implementar conversiones de tipo
+    // Evaluar expresión fuente
     exp->expr->accept(this);
-    out << "  # Cast to " << exp->targetType->toString() << " (not implemented)\n";
+    bool sourceIsFloat = lastExprIsFloat;
+    
+    // Determinar si la fuente es un puntero (expresión unaria O variable de tipo puntero)
+    bool sourceIsPointer = false;
+    
+    // Caso 1: UnaryExp con operadores de puntero
+    UnaryExp* unarySource = exp->expr->asUnaryExp();
+    if (unarySource && (unarySource->op == REF_OP || unarySource->op == REF_MUT_OP || unarySource->op == DEREF_OP)) {
+        sourceIsPointer = true;
+    }
+    
+    // Caso 2: IdExp cuyo tipo es PointerType
+    IdExp* idSource = exp->expr->asIdExp();
+    if (idSource && varTypes.count(idSource->id)) {
+        if (isPointerType(varTypes[idSource->id])) {
+            sourceIsPointer = true;
+        }
+    }
+    
+    // Determinar tipo de destino
+    TypeKindVisitor targetVisitor;
+    exp->targetType->accept(&targetVisitor);
+    bool targetIsPointer = targetVisitor.isPointerType;
+    bool targetIsBaseType = targetVisitor.isBaseType;
+    BaseTypeKind targetKind = targetVisitor.baseKind;
+    
+    if (targetIsPointer) {
+        // Cast a puntero
+        if (sourceIsFloat) {
+            // Float → Puntero: NO PERMITIDO (unsafe)
+            out << "  # ERROR: cast de float a puntero no permitido\n";
+            lastExprIsFloat = false;
+            return 0;
+        }
+        // Entero/Puntero → Puntero: ya está en %rax, no hacer nada
+        out << "  # puntero/i64 → puntero (no-op, ya en %rax)\n";
+        lastExprIsFloat = false;
+        return 0;
+    }
+    
+    if (!targetIsBaseType) {
+        out << "  # Cast to unknown type\n";
+        return 0;
+    }
+    
+    // ====================
+    // Puntero → i64
+    // ====================
+    if (sourceIsPointer && targetKind == I64_TYPE) {
+        // Puntero ya está en %rax como i64, no hacer nada
+        out << "  # puntero → i64 (no-op, ya en %rax)\n";
+        lastExprIsFloat = false;
+        return 0;
+    }
+    
+    // ====================
+    // CASO 1: Entero → Entero
+    // ====================
+    if (!sourceIsFloat && !sourceIsPointer && (targetKind == I32_TYPE || targetKind == I64_TYPE)) {
+        // Asumimos que la fuente es i32 o i64
+        // i32 → i64: extensión de signo
+        if (targetKind == I64_TYPE) {
+            out << "  movsxd %eax, %rax  # i32 → i64 (extensión de signo)\n";
+        } else {
+            // i64 → i32: truncado (solo usar parte baja)
+            // %eax ya tiene los 32 bits bajos, no hacer nada
+            out << "  # i64 → i32 (truncado implícito en %eax)\n";
+        }
+        lastExprIsFloat = false;
+        return 0;
+    }
+    
+    // ====================
+    // CASO 2: Entero → Float
+    // ====================
+    if (!sourceIsFloat && (targetKind == F32_TYPE || targetKind == F64_TYPE)) {
+        if (targetKind == F64_TYPE) {
+            out << "  cvtsi2sd %rax, %xmm0  # i64 → f64\n";
+        } else {
+            out << "  cvtsi2ss %rax, %xmm0  # i64 → f32\n";
+        }
+        lastExprIsFloat = true;
+        return 0;
+    }
+    
+    // ====================
+    // CASO 3: Float → Entero (trunca hacia cero)
+    // ====================
+    if (sourceIsFloat && (targetKind == I32_TYPE || targetKind == I64_TYPE)) {
+        if (targetKind == I32_TYPE) {
+            out << "  cvttsd2si %xmm0, %eax  # f64 → i32 (trunca)\n";
+        } else {
+            out << "  cvttsd2si %xmm0, %rax  # f64 → i64 (trunca)\n";
+        }
+        lastExprIsFloat = false;
+        return 0;
+    }
+    
+    // ====================
+    // CASO 4: Float → Float
+    // ====================
+    if (sourceIsFloat && (targetKind == F32_TYPE || targetKind == F64_TYPE)) {
+        // Asumimos que la fuente es f64 (siempre usamos double en XMM)
+        if (targetKind == F32_TYPE) {
+            out << "  cvtsd2ss %xmm0, %xmm0  # f64 → f32\n";
+        } else {
+            // f64 → f64 o f32 → f64: no hacer nada o convertir
+            out << "  # f64 → f64 (sin cambio)\n";
+        }
+        lastExprIsFloat = true;
+        return 0;
+    }
+    
+    // ====================
+    // CASO 5: Bool ↔ Entero
+    // ====================
+    if (targetKind == BOOL_TYPE) {
+        if (sourceIsFloat) {
+            // Float → Bool: comparar con 0.0
+            out << "  xorpd %xmm1, %xmm1  # Crear 0.0\n";
+            out << "  ucomisd %xmm1, %xmm0\n";
+            out << "  setne %al\n";
+            out << "  movzbl %al, %eax\n";
+            lastExprIsFloat = false;
+        } else {
+            // Entero → Bool: comparar con 0
+            out << "  testq %rax, %rax\n";
+            out << "  setne %al\n";
+            out << "  movzbl %al, %eax\n";
+            lastExprIsFloat = false;
+        }
+        return 0;
+    }
+    
+    if (!sourceIsFloat && targetKind == BOOL_TYPE) {
+        // Ya manejado arriba
+        return 0;
+    }
+    
+    out << "  # Cast no implementado\n";
     return 0;
 }
 
 int GenCodeVisitor::visit(IfExp* exp) {
+    // Optimización: verificar si la condición es constante
+    long long constCond;
+    if (tryEvalConst(exp->condition, constCond)) {
+        // Condición constante: solo generar la rama tomada
+        if (constCond != 0) {
+            // Condición true: solo ejecutar then
+            exp->thenBlock->accept(this);
+        } else {
+            // Condición false: solo ejecutar else (si existe)
+            if (exp->elseBlock) {
+                exp->elseBlock->accept(this);
+            }
+        }
+        return 0;
+    }
+    
+    // Condición no constante: generación normal con etiquetas
     int label = labelCounter++;
     
     exp->condition->accept(this);
@@ -297,52 +699,200 @@ int GenCodeVisitor::visit(Block* block) {
 
 int GenCodeVisitor::visit(VarDeclStm* stm) {
     if (inFunction) {
-        // El offset ya fue asignado en countLocalVars, solo generar el inicializador
+        if (stm->varType) {
+            varTypes[stm->varName] = stm->varType;
+        }
+
         if (stm->initializer) {
             stm->initializer->accept(this);
-            out << "  movq %rax, " << localVars[stm->varName] << "(%rbp)\n";
+
+            bool declaredAsFloat = false;
+            if (stm->varType) {
+                declaredAsFloat = isFloatType(stm->varType);
+            }
+
+            bool initializerIsFloat = lastExprIsFloat;
+            if (initializerIsFloat || declaredAsFloat) {
+                out << "  movsd %xmm0, " << localVars[stm->varName] << "(%rbp)\n";
+                if (!stm->varType) {
+                    varTypes[stm->varName] = &inferredF64;
+                }
+            } else {
+                out << "  movq %rax, " << localVars[stm->varName] << "(%rbp)\n";
+                if (!stm->varType) {
+                    varTypes[stm->varName] = &inferredI64;
+                }
+            }
         }
     }
     return 0;
 }
 
 int GenCodeVisitor::visit(AssignStm* stm) {
-    stm->rhs->accept(this);
+    // Verificar si LHS es una desreferencia de puntero
+    UnaryExp* unaryLhs = stm->lhs->asUnaryExp();
+    if (unaryLhs && unaryLhs->op == DEREF_OP) {
+        // Asignación a través de puntero: *ptr = valor
+        
+        // 1. Evaluar RHS (valor a escribir)
+        stm->rhs->accept(this);
+        bool rhsIsFloat = lastExprIsFloat;
+        
+        // 2. Guardar resultado según tipo
+        if (rhsIsFloat) {
+            out << "  subq $8, %rsp\n";
+            out << "  movsd %xmm0, (%rsp)\n";  // Temporal en stack
+        } else {
+            out << "  pushq %rax\n";
+        }
+        
+        // 3. Evaluar LHS (obtener dirección del puntero)
+        unaryLhs->operand->accept(this);
+        out << "  movq %rax, %rcx\n";  // Dirección en %rcx
+        
+        // 4. Recuperar valor y escribir
+        if (rhsIsFloat) {
+            out << "  movsd (%rsp), %xmm0\n";
+            out << "  addq $8, %rsp\n";
+            // Determinar si es f32 o f64
+            IdExp* ptrId = unaryLhs->operand->asIdExp();
+            bool isF32 = false;
+            if (ptrId && varTypes.count(ptrId->id)) {
+                Type* ptrType = varTypes[ptrId->id];
+                if (isPointerType(ptrType)) {
+                    Type* pointee = getPointeeType(ptrType);
+                    if (pointee) {
+                        TypeKindVisitor pkVisitor;
+                        pointee->accept(&pkVisitor);
+                        if (pkVisitor.isBaseType && pkVisitor.baseKind == F32_TYPE) {
+                            isF32 = true;
+                        }
+                    }
+                }
+            }
+            if (isF32) {
+                out << "  movss %xmm0, (%rcx)\n";
+            } else {
+                out << "  movsd %xmm0, (%rcx)\n";
+            }
+        } else {
+            out << "  popq %rax\n";
+            // Determinar tamaño según tipo
+            IdExp* ptrId = unaryLhs->operand->asIdExp();
+            bool isI32 = false;
+            if (ptrId && varTypes.count(ptrId->id)) {
+                Type* ptrType = varTypes[ptrId->id];
+                if (isPointerType(ptrType)) {
+                    Type* pointee = getPointeeType(ptrType);
+                    if (pointee) {
+                        TypeKindVisitor pkVisitor;
+                        pointee->accept(&pkVisitor);
+                        if (pkVisitor.isBaseType && (pkVisitor.baseKind == I32_TYPE || pkVisitor.baseKind == BOOL_TYPE)) {
+                            isI32 = true;
+                        }
+                    }
+                }
+            }
+            if (isI32) {
+                out << "  movl %eax, (%rcx)\n";
+            } else {
+                out << "  movq %rax, (%rcx)\n";
+            }
+        }
+        return 0;
+    }
     
-    // LHS debe ser IdExp o DerefExp
+    // Caso normal: asignación a variable
+    stm->rhs->accept(this);
+    bool rhsIsFloat = lastExprIsFloat;
+
     IdExp* idLhs = stm->lhs->asIdExp();
     if (idLhs) {
+        bool wasKnown = false;
+        bool knownAsFloat = false;
+        auto it = varTypes.find(idLhs->id);
+        if (it != varTypes.end()) {
+            wasKnown = true;
+            knownAsFloat = isFloatType(it->second);
+        }
+
+        bool treatAsFloat = knownAsFloat || rhsIsFloat;
+        if (rhsIsFloat && !knownAsFloat) {
+            varTypes[idLhs->id] = &inferredF64;
+            knownAsFloat = true;
+            treatAsFloat = true;
+        } else if (!rhsIsFloat && !wasKnown) {
+            varTypes[idLhs->id] = &inferredI64;
+        }
+
         if (globalVars.count(idLhs->id)) {
-            // Operadores compuestos
             if (stm->op != ASSIGN) {
-                out << "  movq %rax, %rcx\n";
-                out << "  movq " << idLhs->id << "(%rip), %rax\n";
-                // Aplicar operador compuesto
-                switch (stm->op) {
-                    case PLUS_ASSIGN:  out << "  addq %rcx, %rax\n"; break;
-                    case MINUS_ASSIGN: out << "  subq %rcx, %rax\n"; break;
-                    case MUL_ASSIGN:   out << "  imulq %rcx, %rax\n"; break;
-                    case DIV_ASSIGN:   out << "  cqto\n  idivq %rcx\n"; break;
-                    case MOD_ASSIGN:   out << "  cqto\n  idivq %rcx\n  movq %rdx, %rax\n"; break;
-                    default: break;
+                if (treatAsFloat) {
+                    out << "  movsd %xmm0, %xmm1\n";
+                    out << "  movsd " << idLhs->id << "(%rip), %xmm0\n";
+                    switch (stm->op) {
+                        case PLUS_ASSIGN:  out << "  addsd %xmm1, %xmm0\n"; break;
+                        case MINUS_ASSIGN: out << "  subsd %xmm1, %xmm0\n"; break;
+                        case MUL_ASSIGN:   out << "  mulsd %xmm1, %xmm0\n"; break;
+                        case DIV_ASSIGN:   out << "  divsd %xmm1, %xmm0\n"; break;
+                        default: break;
+                    }
+                    out << "  movsd %xmm0, " << idLhs->id << "(%rip)\n";
+                } else {
+                    out << "  movq %rax, %rcx\n";
+                    out << "  movq " << idLhs->id << "(%rip), %rax\n";
+                    switch (stm->op) {
+                        case PLUS_ASSIGN:  out << "  addq %rcx, %rax\n"; break;
+                        case MINUS_ASSIGN: out << "  subq %rcx, %rax\n"; break;
+                        case MUL_ASSIGN:   out << "  imulq %rcx, %rax\n"; break;
+                        case DIV_ASSIGN:   out << "  cqto\\n  idivq %rcx\n"; break;
+                        case MOD_ASSIGN:   out << "  cqto\\n  idivq %rcx\\n  movq %rdx, %rax\n"; break;
+                        default: break;
+                    }
+                    out << "  movq %rax, " << idLhs->id << "(%rip)\n";
+                }
+            } else {
+                // Asignación simple
+                if (treatAsFloat) {
+                    out << "  movsd %xmm0, " << idLhs->id << "(%rip)\n";
+                } else {
+                    out << "  movq %rax, " << idLhs->id << "(%rip)\n";
                 }
             }
-            out << "  movq %rax, " << idLhs->id << "(%rip)\n";
         } else if (localVars.count(idLhs->id)) {
             if (stm->op != ASSIGN) {
-                out << "  movq %rax, %rcx\n";
-                out << "  movq " << localVars[idLhs->id] << "(%rbp), %rax\n";
-                // Aplicar operador compuesto
-                switch (stm->op) {
-                    case PLUS_ASSIGN:  out << "  addq %rcx, %rax\n"; break;
-                    case MINUS_ASSIGN: out << "  subq %rcx, %rax\n"; break;
-                    case MUL_ASSIGN:   out << "  imulq %rcx, %rax\n"; break;
-                    case DIV_ASSIGN:   out << "  cqto\n  idivq %rcx\n"; break;
-                    case MOD_ASSIGN:   out << "  cqto\n  idivq %rcx\n  movq %rdx, %rax\n"; break;
-                    default: break;
+                if (treatAsFloat) {
+                    out << "  movsd %xmm0, %xmm1\n";
+                    out << "  movsd " << localVars[idLhs->id] << "(%rbp), %xmm0\n";
+                    switch (stm->op) {
+                        case PLUS_ASSIGN:  out << "  addsd %xmm1, %xmm0\n"; break;
+                        case MINUS_ASSIGN: out << "  subsd %xmm1, %xmm0\n"; break;
+                        case MUL_ASSIGN:   out << "  mulsd %xmm1, %xmm0\n"; break;
+                        case DIV_ASSIGN:   out << "  divsd %xmm1, %xmm0\n"; break;
+                        default: break;
+                    }
+                    out << "  movsd %xmm0, " << localVars[idLhs->id] << "(%rbp)\n";
+                } else {
+                    out << "  movq %rax, %rcx\n";
+                    out << "  movq " << localVars[idLhs->id] << "(%rbp), %rax\n";
+                    switch (stm->op) {
+                        case PLUS_ASSIGN:  out << "  addq %rcx, %rax\n"; break;
+                        case MINUS_ASSIGN: out << "  subq %rcx, %rax\n"; break;
+                        case MUL_ASSIGN:   out << "  imulq %rcx, %rax\n"; break;
+                        case DIV_ASSIGN:   out << "  cqto\\n  idivq %rcx\n"; break;
+                        case MOD_ASSIGN:   out << "  cqto\\n  idivq %rcx\\n  movq %rdx, %rax\n"; break;
+                        default: break;
+                    }
+                    out << "  movq %rax, " << localVars[idLhs->id] << "(%rbp)\n";
+                }
+            } else {
+                // Asignación simple
+                if (treatAsFloat) {
+                    out << "  movsd %xmm0, " << localVars[idLhs->id] << "(%rbp)\n";
+                } else {
+                    out << "  movq %rax, " << localVars[idLhs->id] << "(%rbp)\n";
                 }
             }
-            out << "  movq %rax, " << localVars[idLhs->id] << "(%rbp)\n";
         }
     }
     return 0;
@@ -353,10 +903,20 @@ int GenCodeVisitor::visit(PrintlnStm* stm) {
         // Optimizar la expresión antes de generar código
         Exp* optimized = stm->args[0]->optimize();
         optimized->accept(this);
-        out << "  movq %rax, %rsi\n";
-        out << "  leaq print_fmt(%rip), %rdi\n";
-        out << "  movl $0, %eax\n";
-        out << "  call printf@PLT\n";
+        
+        if (lastExprIsFloat) {
+            // SysV ABI: floats van en %xmm0, contador de args float en %al
+            // El resultado ya está en %xmm0
+            out << "  leaq float_fmt(%rip), %rdi\n";
+            out << "  movl $1, %eax  # 1 argumento XMM\n";
+            out << "  call printf@PLT\n";
+        } else {
+            // Entero: formato "%ld\n"
+            out << "  movq %rax, %rsi\n";
+            out << "  leaq print_fmt(%rip), %rdi\n";
+            out << "  movl $0, %eax\n";
+            out << "  call printf@PLT\n";
+        }
     }
     return 0;
 }
@@ -365,14 +925,11 @@ int GenCodeVisitor::visit(IfStm* stm) {
     // Optimización: verificar si la condición es constante
     long long constCond;
     if (tryEvalConst(stm->condition, constCond)) {
-        cout << "DEBUG: IfStm optimization triggered, constCond = " << constCond << endl;
         // Condición constante: solo generar la rama tomada
         if (constCond != 0) {
-            cout << "DEBUG: Generating ONLY then branch" << endl;
             // Condición true: solo ejecutar then
             stm->thenBlock->accept(this);
         } else {
-            cout << "DEBUG: Generating ONLY else branch" << endl;
             // Condición false: solo ejecutar else (si existe)
             if (stm->elseBlock) {
                 stm->elseBlock->accept(this);
@@ -381,7 +938,6 @@ int GenCodeVisitor::visit(IfStm* stm) {
         return 0;
     }
     
-    cout << "DEBUG: condition not constant, generating both branches" << endl;
     // Condición no constante: generación normal con etiquetas
     int label = labelCounter++;
     
@@ -517,6 +1073,9 @@ void GenCodeVisitor::countLocalVarsInStmt(Stm* stmt) {
 
 int GenCodeVisitor::visit(GlobalVarDecl* decl) {
     globalVars[decl->varName] = true;
+    if (decl->varType) {
+        varTypes[decl->varName] = decl->varType;
+    }
     return 0;
 }
 
@@ -526,7 +1085,10 @@ int GenCodeVisitor::visit(FunDecl* decl) {
     localVars.clear();
     stackOffset = -8;
     
-    vector<string> argRegs = {"%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"};
+    vector<string> intArgRegs = {"%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"};
+    vector<string> floatArgRegs = {"%xmm0", "%xmm1", "%xmm2", "%xmm3", "%xmm4", "%xmm5", "%xmm6", "%xmm7"};
+    size_t intArgIndex = 0;
+    size_t floatArgIndex = 0;
     
     out << ".globl " << decl->name << "\n";
     out << decl->name << ":\n";
@@ -534,8 +1096,11 @@ int GenCodeVisitor::visit(FunDecl* decl) {
     out << "  movq %rsp, %rbp\n";
     
     // Parámetros
-    for (size_t i = 0; i < decl->params.size() && i < 6; i++) {
-        localVars[decl->params[i]->name] = stackOffset;
+    for (auto* param : decl->params) {
+        localVars[param->name] = stackOffset;
+        if (param->type) {
+            varTypes[param->name] = param->type;
+        }
         stackOffset -= 8;
     }
     
@@ -546,13 +1111,33 @@ int GenCodeVisitor::visit(FunDecl* decl) {
     
     // Reservar espacio en stack ANTES de mover parámetros
     int stackSize = -stackOffset - 8;
+    if (stackSize % 16 != 0) {
+        stackSize += 16 - (stackSize % 16);
+    }
     if (stackSize > 0) {
         out << "  subq $" << stackSize << ", %rsp\n";
     }
     
     // Ahora sí mover parámetros a sus posiciones
-    for (size_t i = 0; i < decl->params.size() && i < 6; i++) {
-        out << "  movq " << argRegs[i] << ", " << localVars[decl->params[i]->name] << "(%rbp)\n";
+    for (auto* param : decl->params) {
+        bool isFloatParam = false;
+        if (param->type) {
+            isFloatParam = isFloatType(param->type);
+        }
+
+        if (isFloatParam) {
+            if (floatArgIndex < floatArgRegs.size()) {
+                out << "  movsd " << floatArgRegs[floatArgIndex++] << ", " << localVars[param->name] << "(%rbp)\n";
+            } else {
+                out << "  # TODO: argumentos float adicionales no soportados aún\n";
+            }
+        } else {
+            if (intArgIndex < intArgRegs.size()) {
+                out << "  movq " << intArgRegs[intArgIndex++] << ", " << localVars[param->name] << "(%rbp)\n";
+            } else {
+                out << "  # TODO: argumentos enteros adicionales no soportados aún\n";
+            }
+        }
     }
     
     // Generar cuerpo
@@ -575,11 +1160,23 @@ int GenCodeVisitor::visit(Program* prog) {
     // Sección .data
     out << ".data\n";
     out << "print_fmt: .string \"%ld \\n\"\n";
+    out << "float_fmt: .string \"%f \\n\"\n";
     
     // Variables globales
     for (auto gv : prog->globalVars) {
         gv->accept(this);
-        out << gv->varName << ": .quad 0\n";
+        
+        // Determinar si es float para usar .double o .quad
+        bool isFloat = false;
+        if (gv->varType) {
+            isFloat = isFloatType(gv->varType);
+        }
+        
+        if (isFloat) {
+            out << gv->varName << ": .double 0.0\n";
+        } else {
+            out << gv->varName << ": .quad 0\n";
+        }
     }
     
     // Sección .text

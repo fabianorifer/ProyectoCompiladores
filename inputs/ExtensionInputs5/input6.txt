@@ -1,0 +1,17 @@
+fn main() {
+    let mut x: f32;
+    let mut y: f64;
+    let mut z: f32;
+    
+    x = 3.14159;
+    y = x as f64;
+    println!("{}", y);
+    
+
+    y = 2.718281828459045;
+    z = y as f32;
+    println!("{}", z);
+    
+    let result: f64 = (x as f64) + y;
+    println!("{}", result);
+}

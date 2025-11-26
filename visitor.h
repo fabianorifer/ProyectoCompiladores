@@ -46,6 +46,51 @@ public:
     virtual int visit(Program* prog) = 0;
 };
 
+// Helper visitor para identificar tipos sin dynamic_cast
+class TypeKindVisitor : public Visitor {
+public:
+    bool isBaseType = false;
+    bool isPointerType = false;
+    BaseTypeKind baseKind;
+    Type* pointeeType = nullptr;
+    
+    int visit(BaseType* type) override {
+        isBaseType = true;
+        baseKind = type->kind;
+        return 0;
+    }
+    int visit(PointerType* type) override {
+        isPointerType = true;
+        pointeeType = type->pointeeType;
+        return 0;
+    }
+    
+    // Implementaciones dummy para el resto
+    int visit(BinaryExp*) override { return 0; }
+    int visit(UnaryExp*) override { return 0; }
+    int visit(NumberExp*) override { return 0; }
+    int visit(FloatExp*) override { return 0; }
+    int visit(BoolExp*) override { return 0; }
+    int visit(StringExp*) override { return 0; }
+    int visit(IdExp*) override { return 0; }
+    int visit(ParenExp*) override { return 0; }
+    int visit(FunCallExp*) override { return 0; }
+    int visit(CastExp*) override { return 0; }
+    int visit(IfExp*) override { return 0; }
+    int visit(Block*) override { return 0; }
+    int visit(VarDeclStm*) override { return 0; }
+    int visit(AssignStm*) override { return 0; }
+    int visit(PrintlnStm*) override { return 0; }
+    int visit(IfStm*) override { return 0; }
+    int visit(WhileStm*) override { return 0; }
+    int visit(ForRangeStm*) override { return 0; }
+    int visit(ReturnStm*) override { return 0; }
+    int visit(ExprStm*) override { return 0; }
+    int visit(GlobalVarDecl*) override { return 0; }
+    int visit(FunDecl*) override { return 0; }
+    int visit(Program*) override { return 0; }
+};
+
 class GenCodeVisitor : public Visitor {
 private:
     ostream& out;
@@ -57,6 +102,7 @@ private:
     bool inFunction;
     string currentFunction;
     Type* lastExprType;  // tipo de la última expresión evaluada
+    bool lastExprIsFloat;  // true si última expr está en XMM, false si en GPR
     
     // Función auxiliar para contar variables locales
     void countLocalVars(Block* block);
@@ -64,6 +110,12 @@ private:
     
     // Optimización: evaluar expresiones constantes
     bool tryEvalConst(Exp* exp, long long& result);
+    
+    // Helper para identificar tipos
+    bool isFloatType(Type* type);
+    bool isPointerType(Type* type);
+    BaseTypeKind getBaseTypeKind(Type* type);
+    Type* getPointeeType(Type* type);
     
 public:
     GenCodeVisitor(ostream& output);

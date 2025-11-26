@@ -12,6 +12,7 @@ class Visitor;
 // Forward declarations
 class IdExp;
 class BinaryExp;
+class UnaryExp;
 class VarDeclStm;
 class Block;
 class IfStm;
@@ -97,6 +98,7 @@ public:
     virtual ~Exp() {}
     virtual IdExp* asIdExp() { return nullptr; }
     virtual BinaryExp* asBinaryExp() { return nullptr; }
+    virtual UnaryExp* asUnaryExp() { return nullptr; }
     virtual Exp* optimize() { return this; }  // Por defecto retorna this (sin cambios)
     virtual bool isConstant() { return false; }
     virtual long long getConstValue() { return 0; }
@@ -122,6 +124,7 @@ public:
     Exp* operand;
     UnaryExp(UnaryOp o, Exp* e) : op(o), operand(e) {}
     int accept(Visitor* visitor);
+    UnaryExp* asUnaryExp() override { return this; }
     ~UnaryExp() { delete operand; }
 };
 
@@ -148,6 +151,8 @@ public:
     bool value;
     BoolExp(bool v) : value(v) {}
     int accept(Visitor* visitor);
+    bool isConstant() override { return true; }
+    long long getConstValue() override { return value ? 1 : 0; }
     ~BoolExp() {}
 };
 

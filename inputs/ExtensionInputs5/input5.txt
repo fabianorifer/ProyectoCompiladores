@@ -1,11 +1,17 @@
 fn main() {
-    let mut x: i64;
-    let mut y: i32;
-    x = 9223372036854775807;
-    y = 100;
-    x -= 1000;
-    y += 50;
-    y *= 2;
-    println!("{}", x);
-    println!("{}", y);
+    let mut a: i32;
+    let mut b: i64;
+    let mut c: i32;
+    
+    a = 2147483647;
+    b = a as i64;
+    println!("{}", b);
+    
+    b = 9223372036854775807;
+    c = b as i32;
+    println!("{}", c);
+    
+    a = 100;
+    b = (a as i64) * 1000000;
+    println!("{}", b);
 }

@@ -193,26 +193,27 @@ Type* Parser::parseBaseType() {
 }
 
 Type* Parser::parsePointerType() {
-    // '*mut' Type | '*const' Type
     bool isMut = false;
-    
+
     if (match(Token::STAR_MUT)) {
         isMut = true;
     } else if (match(Token::STAR_CONST)) {
         isMut = false;
     } else if (match(Token::MUL)) {
-        // Versión separada: * seguido de mut o const
         if (match(Token::MUT)) {
             isMut = true;
-        } else if (!match(Token::ID) || previous->text != "const") {
-            throw runtime_error("Se esperaba 'mut' o 'const' después de '*'");
+        } else if (check(Token::ID) && current->text == "const") {
+            advance();
+            isMut = false;
+        } else {
+            // '*T' sin especificar const/mut → tratar como *const
+            isMut = false;
         }
     } else {
-        throw runtime_error("Se esperaba '*mut' o '*const' para puntero");
+        throw runtime_error("Se esperaba '*mut', '*const' o '*' para puntero");
     }
-    
-    Type* pointeeType = parseType(); // Recursivo
-    
+
+    Type* pointeeType = parseType();
     return new PointerType(isMut, pointeeType);
 }
 
@@ -618,14 +619,26 @@ Exp* Parser::parseRelational() {
     return left;
 }
 
+Exp* Parser::parseCast() {
+    Exp* expr = parseMultiplicative();  // Multiplicative tiene mayor precedencia que cast
+    
+    // ('as' Type)*
+    while (match(Token::AS)) {
+        Type* targetType = parseType();
+        expr = new CastExp(expr, targetType);
+    }
+    
+    return expr;
+}
+
 Exp* Parser::parseAdditive() {
-    Exp* left = parseMultiplicative();
+    Exp* left = parseCast();  // Cast tiene mayor precedencia que additive
     
     while (check(Token::PLUS) || check(Token::MINUS)) {
         BinaryOp op = match(Token::PLUS) ? PLUS_OP : MINUS_OP;
         if (op == MINUS_OP) match(Token::MINUS);
         
-        Exp* right = parseMultiplicative();
+        Exp* right = parseCast();  // Cast tiene mayor precedencia
         left = new BinaryExp(left, right, op);
     }
     
@@ -666,44 +679,25 @@ Exp* Parser::parsePower() {
 }
 
 Exp* Parser::parsePrefix() {
-    // PrefixOp Prefix | CastExpr
-    if (check(Token::NOT) || check(Token::MINUS) || 
-        check(Token::AMP) || check(Token::MUL)) {
-        
-        UnaryOp op;
-        if (match(Token::NOT)) {
-            op = NOT_OP;
-        } else if (match(Token::MINUS)) {
-            op = NEG_OP;
-        } else if (match(Token::AMP)) {
-            // Podría ser & o &mut
-            if (match(Token::MUT)) {
-                op = REF_MUT_OP;
-            } else {
-                op = REF_OP;
-            }
-        } else {
-            match(Token::MUL);
-            op = DEREF_OP;
-        }
-        
-        Exp* operand = parsePrefix(); // Recursivo
-        return new UnaryExp(op, operand);
+    if (match(Token::NOT)) {
+        Exp* operand = parsePrefix();  // Recursivo para !-x, etc.
+        return new UnaryExp(NOT_OP, operand);
     }
-    
-    return parseCast();
-}
+    if (match(Token::MINUS)) {
+        Exp* operand = parsePrefix();  // Recursivo para --x, etc.
+        return new UnaryExp(NEG_OP, operand);
+    }
+    if (match(Token::AMP)) {
+        bool isMut = match(Token::MUT);
+        Exp* operand = parsePrefix();  // Recursivo para &-x, etc.
+        return new UnaryExp(isMut ? REF_MUT_OP : REF_OP, operand);
+    }
+    if (match(Token::MUL)) {
+        Exp* operand = parsePrefix();  // Recursivo para *-x, etc.
+        return new UnaryExp(DEREF_OP, operand);
+    }
 
-Exp* Parser::parseCast() {
-    Exp* expr = parsePostfix();
-    
-    // ('as' Type)*
-    while (match(Token::AS)) {
-        Type* targetType = parseType();
-        expr = new CastExp(expr, targetType);
-    }
-    
-    return expr;
+    return parsePostfix();
 }
 
 Exp* Parser::parsePostfix() {
