@@ -1,8 +1,8 @@
 .data
 print_fmt: .string "%ld \n"
 .text
-.globl multiplicar
-multiplicar:
+.globl suma
+suma:
   pushq %rbp
   movq %rsp, %rbp
   subq $24, %rsp
@@ -13,29 +13,31 @@ multiplicar:
   movq -16(%rbp), %rax
   movq %rax, %rcx
   popq %rax
-  imulq %rcx, %rax
+  addq %rcx, %rax
   movq %rax, -24(%rbp)
   movq -24(%rbp), %rax
-  jmp .end_multiplicar
+  jmp .end_suma
   movq $0, %rax
-  jmp .end_multiplicar
-.end_multiplicar:
+  jmp .end_suma
+.end_suma:
  leave
  ret
 .globl main
 main:
   pushq %rbp
   movq %rsp, %rbp
-  subq $16, %rsp
-  movq $5, %rax
-  movq %rax, -8(%rbp)
+  subq $24, %rsp
   movq $8, %rax
+  movq %rax, -8(%rbp)
+  movq $12, %rax
   movq %rax, -16(%rbp)
   movq -8(%rbp), %rax
   movq %rax, %rdi
   movq -16(%rbp), %rax
   movq %rax, %rsi
-  call multiplicar
+  call suma
+  movq %rax, -24(%rbp)
+  movq -24(%rbp), %rax
   movq %rax, %rsi
   leaq print_fmt(%rip), %rdi
   movl $0, %eax

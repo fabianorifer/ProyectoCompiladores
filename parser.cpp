@@ -167,6 +167,9 @@ Param* Parser::parseParam() {
 
 Type* Parser::parseType() {
     // PointerType | BaseType
+    if (check(Token::STAR_MUT) || check(Token::STAR_CONST)) {
+        return parsePointerType();
+    }
     if (check(Token::MUL)) {
         return parsePointerType();
     }
@@ -191,15 +194,21 @@ Type* Parser::parseBaseType() {
 
 Type* Parser::parsePointerType() {
     // '*mut' Type | '*const' Type
-    if (!match(Token::MUL)) {
-        throw runtime_error("Se esperaba '*' para puntero");
-    }
-    
     bool isMut = false;
-    if (match(Token::MUT)) {
+    
+    if (match(Token::STAR_MUT)) {
         isMut = true;
-    } else if (!match(Token::ID) || previous->text != "const") {
-        throw runtime_error("Se esperaba 'mut' o 'const' después de '*'");
+    } else if (match(Token::STAR_CONST)) {
+        isMut = false;
+    } else if (match(Token::MUL)) {
+        // Versión separada: * seguido de mut o const
+        if (match(Token::MUT)) {
+            isMut = true;
+        } else if (!match(Token::ID) || previous->text != "const") {
+            throw runtime_error("Se esperaba 'mut' o 'const' después de '*'");
+        }
+    } else {
+        throw runtime_error("Se esperaba '*mut' o '*const' para puntero");
     }
     
     Type* pointeeType = parseType(); // Recursivo
@@ -237,7 +246,15 @@ Block* Parser::parseBlock() {
 }
 
 Stm* Parser::parseStmt() {
-    // SimpleStmt ';' | IfExpr | WhileStmt | ForRangeStmt | Block | PrintlnStmt ';'
+    // SimpleStmt ';' | IfExpr | WhileStmt | ForRangeStmt | Block | PrintlnStmt ';' | unsafe Block
+    
+    // unsafe block: simplemente ignoramos 'unsafe' y parseamos el bloque
+    if (match(Token::UNSAFE)) {
+        if (!check(Token::LBRACE)) {
+            throw runtime_error("Se esperaba '{' después de 'unsafe'");
+        }
+        return parseBlock();
+    }
     
     if (check(Token::LBRACE)) {
         return parseBlock();
@@ -273,7 +290,7 @@ Stm* Parser::parseStmt() {
     if (check(Token::RBRACE)) {
         // Es la última expresión del bloque, return implícito
         // Convertir ExprStm en ReturnStm si aplica
-        ExprStm* exprStm = dynamic_cast<ExprStm*>(s);
+        ExprStm* exprStm = s->asExprStm();
         if (exprStm) {
             ReturnStm* retStm = new ReturnStm(exprStm->expr);
             exprStm->expr = nullptr; // Evitar double delete
@@ -325,6 +342,7 @@ Stm* Parser::parseSimpleStmt() {
         }
         
         Exp* rhs = parseExpr();
+        rhs = rhs->optimize();  // Optimizar expresión
         return new AssignStm(expr, op, rhs);
     }
     
@@ -351,9 +369,11 @@ VarDeclStm* Parser::parseVarDecl() {
         varType = parseType();
         if (match(Token::ASSIGN)) {
             initializer = parseExpr();
+            initializer = initializer->optimize();  // Optimizar expresión
         }
     } else if (match(Token::ASSIGN)) {
         initializer = parseExpr();
+        initializer = initializer->optimize();  // Optimizar expresión
     } else {
         throw runtime_error("Declaración local requiere tipo o inicializador");
     }
@@ -412,6 +432,7 @@ IfStm* Parser::parseIfStmt() {
     }
     
     Exp* condition = parseExpr();
+    condition = condition->optimize();  // Optimizar condición
     Block* thenBlock = parseBlock();
     Block* elseBlock = nullptr;
     
@@ -434,6 +455,7 @@ WhileStm* Parser::parseWhileStmt() {
     }
     
     Exp* condition = parseExpr();
+    condition = condition->optimize();  // Optimizar condición
     Block* body = parseBlock();
     
     return new WhileStm(condition, body);
@@ -692,7 +714,7 @@ Exp* Parser::parsePostfix() {
         match(Token::LPAREN);
         
         // Convertir expr en FunCallExp si es ID
-        IdExp* idExpr = dynamic_cast<IdExp*>(expr);
+        IdExp* idExpr = expr->asIdExp();
         if (!idExpr) {
             throw runtime_error("Solo identificadores pueden ser llamados como funciones");
         }
@@ -722,7 +744,7 @@ Exp* Parser::parsePrimary() {
     // Literal | ID | '(' Expr ')'
     
     if (match(Token::NUM)) {
-        return new NumberExp(stoi(previous->text));
+        return new NumberExp(stoll(previous->text));
     }
     
     if (match(Token::FLOAT)) {

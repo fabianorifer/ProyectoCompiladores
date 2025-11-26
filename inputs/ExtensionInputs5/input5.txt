@@ -1,37 +1,11 @@
-// Test complejo: inferencia, conversión y punteros
-let global_inferred = 999;
-
-fn convert_and_double(x: i32) -> i64 {
-    let doubled = x * 2;
-    return doubled as i64;
-}
-
 fn main() {
-    let mut value = 42;
-    let ptr = &mut value;
-    
-    *ptr = 100;
-    
-    let converted: i64 = value as i64;
-    println!("Converted: {}", converted);
-    
-    // Inferencia con operaciones complejas
-    let a = 10;
-    let b = 20;
-    let result = (a + b) * (a - b);
-    
-    // Conversión en cascada
-    let x: i32 = 5;
-    let y: f64 = x as i64 as f64;
-    
+    let mut x: i64;
+    let mut y: i32;
+    x = 9223372036854775807;
+    y = 100;
+    x -= 1000;
+    y += 50;
+    y *= 2;
+    println!("{}", x);
     println!("{}", y);
-    
-    // Loop con inferencia
-    let mut sum = 0;
-    for i in 1..10 {
-        sum += i;
-    }
-    
-    let final_result: f32 = sum as f32 / 2.0;
-    println!("Final: {}", final_result);
 }

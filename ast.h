@@ -9,6 +9,16 @@ using namespace std;
 
 class Visitor;
 
+// Forward declarations
+class IdExp;
+class BinaryExp;
+class VarDeclStm;
+class Block;
+class IfStm;
+class WhileStm;
+class ForRangeStm;
+class ExprStm;
+
 // ============================================
 // TIPOS
 // ============================================
@@ -85,6 +95,11 @@ class Exp {
 public:
     virtual int accept(Visitor* visitor) = 0;
     virtual ~Exp() {}
+    virtual IdExp* asIdExp() { return nullptr; }
+    virtual BinaryExp* asBinaryExp() { return nullptr; }
+    virtual Exp* optimize() { return this; }  // Por defecto retorna this (sin cambios)
+    virtual bool isConstant() { return false; }
+    virtual long long getConstValue() { return 0; }
     static string binopToString(BinaryOp op);
     static string unopToString(UnaryOp op);
 };
@@ -96,6 +111,8 @@ public:
     BinaryOp op;
     BinaryExp(Exp* l, Exp* r, BinaryOp o) : left(l), right(r), op(o) {}
     int accept(Visitor* visitor);
+    BinaryExp* asBinaryExp() override { return this; }
+    Exp* optimize() override;
     ~BinaryExp() { delete left; delete right; }
 };
 
@@ -113,6 +130,8 @@ public:
     int value;
     NumberExp(int v) : value(v) {}
     int accept(Visitor* visitor);
+    bool isConstant() override { return true; }
+    long long getConstValue() override { return value; }
     ~NumberExp() {}
 };
 
@@ -145,6 +164,7 @@ public:
     string id;
     IdExp(string i) : id(i) {}
     int accept(Visitor* visitor);
+    IdExp* asIdExp() override { return this; }
     ~IdExp() {}
 };
 
@@ -153,6 +173,11 @@ public:
     Exp* inner;
     ParenExp(Exp* e) : inner(e) {}
     int accept(Visitor* visitor);
+    Exp* optimize() override { 
+        // Optimizar la expresión interna y retornarla directamente
+        // (los paréntesis ya no son necesarios en el AST optimizado)
+        return inner->optimize(); 
+    }
     ~ParenExp() { delete inner; }
 };
 
@@ -195,6 +220,12 @@ class Stm {
 public:
     virtual int accept(Visitor* visitor) = 0;
     virtual ~Stm() {}
+    virtual VarDeclStm* asVarDeclStm() { return nullptr; }
+    virtual Block* asBlock() { return nullptr; }
+    virtual IfStm* asIfStm() { return nullptr; }
+    virtual WhileStm* asWhileStm() { return nullptr; }
+    virtual ForRangeStm* asForRangeStm() { return nullptr; }
+    virtual ExprStm* asExprStm() { return nullptr; }
 };
 
 class Block : public Stm {
@@ -202,6 +233,7 @@ public:
     vector<Stm*> stmts;
     Block() {}
     int accept(Visitor* visitor);
+    Block* asBlock() override { return this; }
     ~Block() {
         for (auto s : stmts) delete s;
     }
@@ -216,6 +248,7 @@ public:
     VarDeclStm(bool mut, string name, Type* t, Exp* init)
         : isMutable(mut), varName(name), varType(t), initializer(init) {}
     int accept(Visitor* visitor);
+    VarDeclStm* asVarDeclStm() override { return this; }
     ~VarDeclStm() {
         if (varType) delete varType;
         if (initializer) delete initializer;
@@ -251,6 +284,7 @@ public:
     IfStm(Exp* c, Block* t, Block* e = nullptr)
         : condition(c), thenBlock(t), elseBlock(e) {}
     int accept(Visitor* visitor);
+    IfStm* asIfStm() override { return this; }
     ~IfStm() {
         delete condition;
         delete thenBlock;
@@ -264,6 +298,7 @@ public:
     Block* body;
     WhileStm(Exp* c, Block* b) : condition(c), body(b) {}
     int accept(Visitor* visitor);
+    WhileStm* asWhileStm() override { return this; }
     ~WhileStm() {
         delete condition;
         delete body;
@@ -279,6 +314,7 @@ public:
     ForRangeStm(string var, Exp* start, Exp* end, Block* b)
         : loopVar(var), rangeStart(start), rangeEnd(end), body(b) {}
     int accept(Visitor* visitor);
+    ForRangeStm* asForRangeStm() override { return this; }
     ~ForRangeStm() {
         delete rangeStart;
         delete rangeEnd;
@@ -301,6 +337,7 @@ public:
     Exp* expr;
     ExprStm(Exp* e) : expr(e) {}
     int accept(Visitor* visitor);
+    ExprStm* asExprStm() override { return this; }
     ~ExprStm() { delete expr; }
 };
 

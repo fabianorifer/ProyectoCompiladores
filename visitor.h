@@ -51,10 +51,19 @@ private:
     ostream& out;
     unordered_map<string, int> localVars;    // offset desde %rbp
     unordered_map<string, bool> globalVars;  // variables globales
+    unordered_map<string, Type*> varTypes;   // tipos de variables
     int stackOffset;
     int labelCounter;
     bool inFunction;
     string currentFunction;
+    Type* lastExprType;  // tipo de la última expresión evaluada
+    
+    // Función auxiliar para contar variables locales
+    void countLocalVars(Block* block);
+    void countLocalVarsInStmt(Stm* stmt);
+    
+    // Optimización: evaluar expresiones constantes
+    bool tryEvalConst(Exp* exp, long long& result);
     
 public:
     GenCodeVisitor(ostream& output);

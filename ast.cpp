@@ -68,4 +68,52 @@ IfExp::~IfExp() {
     if (elseBlock) delete elseBlock;
 }
 
+// ============================================
+// OPTIMIZACION
+// ============================================
+
+Exp* BinaryExp::optimize() {
+    // Primero optimizar operandos recursivamente
+    Exp* newLeft = left->optimize();
+    Exp* newRight = right->optimize();
+    
+    // Si ambos operandos son constantes, evaluar en compile-time
+    if (newLeft->isConstant() && newRight->isConstant()) {
+        long long lval = newLeft->getConstValue();
+        long long rval = newRight->getConstValue();
+        long long result = 0;
+        bool canOptimize = true;
+        
+        switch (op) {
+            case PLUS_OP:  result = lval + rval; break;
+            case MINUS_OP: result = lval - rval; break;
+            case MUL_OP:   result = lval * rval; break;
+            case DIV_OP:   if (rval != 0) result = lval / rval; else canOptimize = false; break;
+            case MOD_OP:   if (rval != 0) result = lval % rval; else canOptimize = false; break;
+            case LT_OP:    result = lval < rval ? 1 : 0; break;
+            case LE_OP:    result = lval <= rval ? 1 : 0; break;
+            case GT_OP:    result = lval > rval ? 1 : 0; break;
+            case GE_OP:    result = lval >= rval ? 1 : 0; break;
+            case EQ_OP:    result = lval == rval ? 1 : 0; break;
+            case NE_OP:    result = lval != rval ? 1 : 0; break;
+            case AND_OP:   result = (lval && rval) ? 1 : 0; break;
+            case OR_OP:    result = (lval || rval) ? 1 : 0; break;
+            default: canOptimize = false; break;
+        }
+        
+        if (canOptimize) {
+            // Crear NumberExp con el resultado
+            return new NumberExp(result);
+        }
+    }
+    
+    // Si los operandos cambiaron, actualizar
+    if (newLeft != left || newRight != right) {
+        left = newLeft;
+        right = newRight;
+    }
+    
+    return this;  // No se pudo optimizar completamente
+}
+
 

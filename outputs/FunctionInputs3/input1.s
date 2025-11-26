@@ -1,27 +1,30 @@
 .data
-.Lprint_fmt: .string "%ld\n"
+print_fmt: .string "%ld \n"
 .text
 .globl suma
 suma:
   pushq %rbp
   movq %rsp, %rbp
+  subq $16, %rsp
   movq %rdi, -8(%rbp)
   movq %rsi, -16(%rbp)
-  subq $16, %rsp
   movq -8(%rbp), %rax
   pushq %rax
   movq -16(%rbp), %rax
   movq %rax, %rcx
   popq %rax
   addq %rcx, %rax
-  jmp .Lend_suma
-.Lend_suma:
-  leave
-  ret
+  jmp .end_suma
+  movq $0, %rax
+  jmp .end_suma
+.end_suma:
+ leave
+ ret
 .globl main
 main:
   pushq %rbp
   movq %rsp, %rbp
+  subq $16, %rsp
   movq $1, %rax
   movq %rax, -8(%rbp)
   movq $20, %rax
@@ -32,10 +35,12 @@ main:
   movq %rax, %rsi
   call suma
   movq %rax, %rsi
-  leaq .Lprint_fmt(%rip), %rdi
+  leaq print_fmt(%rip), %rdi
   movl $0, %eax
   call printf@PLT
-.Lend_main:
-  leave
-  ret
+  movq $0, %rax
+  jmp .end_main
+.end_main:
+ leave
+ ret
 .section .note.GNU-stack,"",@progbits

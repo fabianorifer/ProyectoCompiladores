@@ -1,0 +1,14 @@
+fn suma(a: i32, b: i32) -> i32 {
+    let resultado: i32 = a + b;
+    resultado
+}
+
+fn main() {
+    let mut x: i32;
+    let mut y: i32;
+    let mut total: i32;
+    x = 8;
+    y = 12;
+    total = suma(x, y);
+    println!("{}", total);
+}

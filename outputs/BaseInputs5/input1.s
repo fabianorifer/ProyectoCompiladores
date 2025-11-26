@@ -5,32 +5,26 @@ print_fmt: .string "%ld \n"
 main:
   pushq %rbp
   movq %rsp, %rbp
-  subq $16, %rsp
-  movq $-1, %rax
+  subq $24, %rsp
+  movq $1, %rax
   movq %rax, -8(%rbp)
-  movq $100, %rax
+  movq $10, %rax
   movq %rax, -16(%rbp)
-  movq $1000, %rax
-  movq %rax, %rcx
-  movq -8(%rbp), %rax
-  subq %rcx, %rax
+  movq $1000000, %rax
+  movq %rax, -24(%rbp)
+  movq $20, %rax
   movq %rax, -8(%rbp)
-  movq $50, %rax
-  movq %rax, %rcx
-  movq -16(%rbp), %rax
-  addq %rcx, %rax
-  movq %rax, -16(%rbp)
-  movq $2, %rax
-  movq %rax, %rcx
-  movq -16(%rbp), %rax
-  imulq %rcx, %rax
-  movq %rax, -16(%rbp)
   movq -8(%rbp), %rax
   movq %rax, %rsi
   leaq print_fmt(%rip), %rdi
   movl $0, %eax
   call printf@PLT
   movq -16(%rbp), %rax
+  movq %rax, %rsi
+  leaq print_fmt(%rip), %rdi
+  movl $0, %eax
+  call printf@PLT
+  movq -24(%rbp), %rax
   movq %rax, %rsi
   leaq print_fmt(%rip), %rdi
   movl $0, %eax

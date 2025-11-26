@@ -42,7 +42,7 @@ int Program::accept(Visitor* v) { return v->visit(this); }
 // ============================================
 
 GenCodeVisitor::GenCodeVisitor(ostream& output) 
-    : out(output), stackOffset(-8), labelCounter(0), inFunction(false) {}
+    : out(output), stackOffset(-8), labelCounter(0), inFunction(false), lastExprType(nullptr) {}
 
 int GenCodeVisitor::generar(Program* program) {
     return program->accept(this);
@@ -72,8 +72,10 @@ int GenCodeVisitor::visit(NumberExp* exp) {
 }
 
 int GenCodeVisitor::visit(FloatExp* exp) {
-    // TODO: Implementar soporte para flotantes con XMM
-    out << "  # FloatExp " << exp->value << " (not implemented)\n";
+    // TODO: Implement proper float support with XMM registers
+    // Por ahora, truncamos a entero
+    out << "  # FloatExp " << exp->value << " (simplified as int)\n";
+    out << "  movq $" << (long long)exp->value << ", %rax\n";
     return 0;
 }
 
@@ -103,7 +105,50 @@ int GenCodeVisitor::visit(ParenExp* exp) {
     return exp->inner->accept(this);
 }
 
+// Método auxiliar para evaluar expresiones constantes
+bool GenCodeVisitor::tryEvalConst(Exp* exp, long long& result) {
+    // Caso 1: NumberExp (literal numérico)
+    if (exp->isConstant()) {
+        result = exp->getConstValue();
+        return true;
+    }
+    
+    // Caso 2: BinaryExp con ambos operandos constantes
+    BinaryExp* binExp = exp->asBinaryExp();
+    if (binExp) {
+        long long left, right;
+        if (tryEvalConst(binExp->left, left) && tryEvalConst(binExp->right, right)) {
+            switch (binExp->op) {
+                case PLUS_OP:  result = left + right; return true;
+                case MINUS_OP: result = left - right; return true;
+                case MUL_OP:   result = left * right; return true;
+                case DIV_OP:   if (right != 0) { result = left / right; return true; } break;
+                case MOD_OP:   if (right != 0) { result = left % right; return true; } break;
+                case LT_OP:    result = left < right ? 1 : 0; return true;
+                case LE_OP:    result = left <= right ? 1 : 0; return true;
+                case GT_OP:    result = left > right ? 1 : 0; return true;
+                case GE_OP:    result = left >= right ? 1 : 0; return true;
+                case EQ_OP:    result = left == right ? 1 : 0; return true;
+                case NE_OP:    result = left != right ? 1 : 0; return true;
+                case AND_OP:   result = (left && right) ? 1 : 0; return true;
+                case OR_OP:    result = (left || right) ? 1 : 0; return true;
+                default: break;
+            }
+        }
+    }
+    
+    return false;
+}
+
 int GenCodeVisitor::visit(BinaryExp* exp) {
+    // Intentar evaluar como constante
+    long long constResult;
+    if (tryEvalConst(exp, constResult)) {
+        out << "  movq $" << constResult << ", %rax\n";
+        return 0;
+    }
+    
+    // Caso no constante: generación normal
     exp->left->accept(this);
     out << "  pushq %rax\n";
     exp->right->accept(this);
@@ -225,17 +270,17 @@ int GenCodeVisitor::visit(IfExp* exp) {
     
     exp->condition->accept(this);
     out << "  cmpq $0, %rax\n";
-    out << "  je .Lelse_" << label << "\n";
+    out << "  je .else_" << label << "\n";
     
     exp->thenBlock->accept(this);
-    out << "  jmp .Lendif_" << label << "\n";
+    out << "  jmp .endif_" << label << "\n";
     
-    out << ".Lelse_" << label << ":\n";
+    out << ".else_" << label << ":\n";
     if (exp->elseBlock) {
         exp->elseBlock->accept(this);
     }
     
-    out << ".Lendif_" << label << ":\n";
+    out << ".endif_" << label << ":\n";
     return 0;
 }
 
@@ -252,9 +297,7 @@ int GenCodeVisitor::visit(Block* block) {
 
 int GenCodeVisitor::visit(VarDeclStm* stm) {
     if (inFunction) {
-        localVars[stm->varName] = stackOffset;
-        stackOffset -= 8;
-        
+        // El offset ya fue asignado en countLocalVars, solo generar el inicializador
         if (stm->initializer) {
             stm->initializer->accept(this);
             out << "  movq %rax, " << localVars[stm->varName] << "(%rbp)\n";
@@ -267,7 +310,7 @@ int GenCodeVisitor::visit(AssignStm* stm) {
     stm->rhs->accept(this);
     
     // LHS debe ser IdExp o DerefExp
-    IdExp* idLhs = dynamic_cast<IdExp*>(stm->lhs);
+    IdExp* idLhs = stm->lhs->asIdExp();
     if (idLhs) {
         if (globalVars.count(idLhs->id)) {
             // Operadores compuestos
@@ -307,9 +350,11 @@ int GenCodeVisitor::visit(AssignStm* stm) {
 
 int GenCodeVisitor::visit(PrintlnStm* stm) {
     if (!stm->args.empty()) {
-        stm->args[0]->accept(this);
+        // Optimizar la expresión antes de generar código
+        Exp* optimized = stm->args[0]->optimize();
+        optimized->accept(this);
         out << "  movq %rax, %rsi\n";
-        out << "  leaq .Lprint_fmt(%rip), %rdi\n";
+        out << "  leaq print_fmt(%rip), %rdi\n";
         out << "  movl $0, %eax\n";
         out << "  call printf@PLT\n";
     }
@@ -317,36 +362,57 @@ int GenCodeVisitor::visit(PrintlnStm* stm) {
 }
 
 int GenCodeVisitor::visit(IfStm* stm) {
+    // Optimización: verificar si la condición es constante
+    long long constCond;
+    if (tryEvalConst(stm->condition, constCond)) {
+        cout << "DEBUG: IfStm optimization triggered, constCond = " << constCond << endl;
+        // Condición constante: solo generar la rama tomada
+        if (constCond != 0) {
+            cout << "DEBUG: Generating ONLY then branch" << endl;
+            // Condición true: solo ejecutar then
+            stm->thenBlock->accept(this);
+        } else {
+            cout << "DEBUG: Generating ONLY else branch" << endl;
+            // Condición false: solo ejecutar else (si existe)
+            if (stm->elseBlock) {
+                stm->elseBlock->accept(this);
+            }
+        }
+        return 0;
+    }
+    
+    cout << "DEBUG: condition not constant, generating both branches" << endl;
+    // Condición no constante: generación normal con etiquetas
     int label = labelCounter++;
     
     stm->condition->accept(this);
     out << "  cmpq $0, %rax\n";
-    out << "  je .Lelse_" << label << "\n";
+    out << "  je .else_" << label << "\n";
     
     stm->thenBlock->accept(this);
-    out << "  jmp .Lendif_" << label << "\n";
+    out << "  jmp .endif_" << label << "\n";
     
-    out << ".Lelse_" << label << ":\n";
+    out << ".else_" << label << ":\n";
     if (stm->elseBlock) {
         stm->elseBlock->accept(this);
     }
     
-    out << ".Lendif_" << label << ":\n";
+    out << ".endif_" << label << ":\n";
     return 0;
 }
 
 int GenCodeVisitor::visit(WhileStm* stm) {
     int label = labelCounter++;
     
-    out << ".Lwhile_" << label << ":\n";
+    out << ".while_" << label << ":\n";
     stm->condition->accept(this);
     out << "  cmpq $0, %rax\n";
-    out << "  je .Lendwhile_" << label << "\n";
+    out << "  je .endwhile_" << label << "\n";
     
     stm->body->accept(this);
-    out << "  jmp .Lwhile_" << label << "\n";
+    out << "  jmp .while_" << label << "\n";
     
-    out << ".Lendwhile_" << label << ":\n";
+    out << ".endwhile_" << label << ":\n";
     return 0;
 }
 
@@ -360,7 +426,7 @@ int GenCodeVisitor::visit(ForRangeStm* stm) {
     out << "  movq %rax, " << localVars[stm->loopVar] << "(%rbp)\n";
     
     // Loop
-    out << ".Lfor_" << label << ":\n";
+    out << ".for_" << label << ":\n";
     
     // Condición: loopVar < rangeEnd
     out << "  movq " << localVars[stm->loopVar] << "(%rbp), %rax\n";
@@ -369,7 +435,7 @@ int GenCodeVisitor::visit(ForRangeStm* stm) {
     out << "  movq %rax, %rcx\n";
     out << "  popq %rax\n";
     out << "  cmpq %rcx, %rax\n";
-    out << "  jge .Lendfor_" << label << "\n";
+    out << "  jge .endfor_" << label << "\n";
     
     // Cuerpo
     stm->body->accept(this);
@@ -379,8 +445,8 @@ int GenCodeVisitor::visit(ForRangeStm* stm) {
     out << "  addq $1, %rax\n";
     out << "  movq %rax, " << localVars[stm->loopVar] << "(%rbp)\n";
     
-    out << "  jmp .Lfor_" << label << "\n";
-    out << ".Lendfor_" << label << ":\n";
+    out << "  jmp .for_" << label << "\n";
+    out << ".endfor_" << label << ":\n";
     
     return 0;
 }
@@ -389,7 +455,7 @@ int GenCodeVisitor::visit(ReturnStm* stm) {
     if (stm->returnValue) {
         stm->returnValue->accept(this);
     }
-    out << "  jmp .Lend_" << currentFunction << "\n";
+    out << "  jmp .end_" << currentFunction << "\n";
     return 0;
 }
 
@@ -400,6 +466,54 @@ int GenCodeVisitor::visit(ExprStm* stm) {
 // ============================================
 // Declaraciones
 // ============================================
+
+void GenCodeVisitor::countLocalVars(Block* block) {
+    for (auto stmt : block->stmts) {
+        countLocalVarsInStmt(stmt);
+    }
+}
+
+void GenCodeVisitor::countLocalVarsInStmt(Stm* stmt) {
+    VarDeclStm* varDecl = stmt->asVarDeclStm();
+    if (varDecl) {
+        if (!localVars.count(varDecl->varName)) {
+            localVars[varDecl->varName] = stackOffset;
+            stackOffset -= 8;
+        }
+        return;
+    }
+    
+    Block* block = stmt->asBlock();
+    if (block) {
+        countLocalVars(block);
+        return;
+    }
+    
+    IfStm* ifStm = stmt->asIfStm();
+    if (ifStm) {
+        countLocalVars(ifStm->thenBlock);
+        if (ifStm->elseBlock) {
+            countLocalVars(ifStm->elseBlock);
+        }
+        return;
+    }
+    
+    WhileStm* whileStm = stmt->asWhileStm();
+    if (whileStm) {
+        countLocalVars(whileStm->body);
+        return;
+    }
+    
+    ForRangeStm* forStm = stmt->asForRangeStm();
+    if (forStm) {
+        if (!localVars.count(forStm->loopVar)) {
+            localVars[forStm->loopVar] = stackOffset;
+            stackOffset -= 8;
+        }
+        countLocalVars(forStm->body);
+        return;
+    }
+}
 
 int GenCodeVisitor::visit(GlobalVarDecl* decl) {
     globalVars[decl->varName] = true;
@@ -422,24 +536,36 @@ int GenCodeVisitor::visit(FunDecl* decl) {
     // Parámetros
     for (size_t i = 0; i < decl->params.size() && i < 6; i++) {
         localVars[decl->params[i]->name] = stackOffset;
-        out << "  movq " << argRegs[i] << ", " << stackOffset << "(%rbp)\n";
         stackOffset -= 8;
     }
     
-    // Cuerpo
+    // Pre-pase: contar todas las variables locales
     if (decl->body) {
-        // Reservar espacio en stack
-        int stackSize = -stackOffset - 8;
-        if (stackSize > 0) {
-            out << "  subq $" << stackSize << ", %rsp\n";
-        }
-        
+        countLocalVars(decl->body);
+    }
+    
+    // Reservar espacio en stack ANTES de mover parámetros
+    int stackSize = -stackOffset - 8;
+    if (stackSize > 0) {
+        out << "  subq $" << stackSize << ", %rsp\n";
+    }
+    
+    // Ahora sí mover parámetros a sus posiciones
+    for (size_t i = 0; i < decl->params.size() && i < 6; i++) {
+        out << "  movq " << argRegs[i] << ", " << localVars[decl->params[i]->name] << "(%rbp)\n";
+    }
+    
+    // Generar cuerpo
+    if (decl->body) {
         decl->body->accept(this);
     }
     
-    out << ".Lend_" << decl->name << ":\n";
-    out << "  leave\n";
-    out << "  ret\n";
+    // Retorno por defecto
+    out << "  movq $0, %rax\n";
+    out << "  jmp .end_" << decl->name << "\n";
+    out << ".end_" << decl->name << ":\n";
+    out << " leave\n";
+    out << " ret\n";
     
     inFunction = false;
     return 0;
@@ -448,7 +574,7 @@ int GenCodeVisitor::visit(FunDecl* decl) {
 int GenCodeVisitor::visit(Program* prog) {
     // Sección .data
     out << ".data\n";
-    out << ".Lprint_fmt: .string \"%ld\\n\"\n";
+    out << "print_fmt: .string \"%ld \\n\"\n";
     
     // Variables globales
     for (auto gv : prog->globalVars) {

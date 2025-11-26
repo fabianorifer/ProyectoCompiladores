@@ -5,14 +5,9 @@ print_fmt: .string "%ld \n"
 main:
   pushq %rbp
   movq %rsp, %rbp
-  subq $16, %rsp
-  movq $10, %rax
+  subq $8, %rsp
+  movq $25, %rax
   movq %rax, -8(%rbp)
-  movq -8(%rbp), %rax
-  # Cast to *mut i32 (not implemented)
-  # REF not implemented
-  movq %rax, -16(%rbp)
-  movq $20, %rax
   movq -8(%rbp), %rax
   movq %rax, %rsi
   leaq print_fmt(%rip), %rdi
