@@ -3,7 +3,7 @@ import subprocess
 import shutil
 
 def get_input_subfolders():
-    """Obtiene todas las subcarpetas dentro de 'inputs/'"""
+    
     inputs_dir = "inputs"
     if not os.path.exists(inputs_dir):
         return []
@@ -16,7 +16,7 @@ def get_input_subfolders():
     return sorted(subfolders)
 
 def select_folder():
-    """Permite al usuario seleccionar una subcarpeta"""
+    
     subfolders = get_input_subfolders()
     
     if not subfolders:
@@ -50,11 +50,11 @@ def select_folder():
             print("❌ Por favor ingresa un número válido.")
 
 def run_inputs_from_folder(subfolder_name, output_dir):
-    """Ejecuta todos los inputs de una subcarpeta específica"""
+    
     input_dir = os.path.join("inputs", subfolder_name)
     os.makedirs(output_dir, exist_ok=True)
     
-    # Obtener todos los archivos .txt
+    
     input_files = sorted([f for f in os.listdir(input_dir) if f.endswith('.txt')])
     
     if not input_files:
@@ -73,27 +73,27 @@ def run_inputs_from_folder(subfolder_name, output_dir):
         run_cmd = ["./compiler.exe", filepath]
         result = subprocess.run(run_cmd, capture_output=True, text=True)
         
-        # Archivo .s generado (se crea en la misma carpeta del input)
+       
         asm_file = os.path.join(input_dir, f"{base_name}.s")
         
-        # Copiar archivo a outputs y eliminar de inputs
+        
         if os.path.isfile(asm_file):
             dest_asm = os.path.join(output_dir, f"{base_name}.s")
             shutil.copy2(asm_file, dest_asm)
-            os.remove(asm_file)  # Eliminar el archivo de inputs/
+            os.remove(asm_file)  
             print("✅")
         else:
             print("⚠️  (no se generó .s)")
         
-        # Mostrar errores si los hay
+        
         if result.stderr:
             print(f"   ⚠️  Error: {result.stderr.strip()}")
 
 def main():
-    # Archivos c++
+    
     programa = ["main.cpp", "scanner.cpp", "token.cpp", "parser.cpp", "ast.cpp", "visitor.cpp"]
     
-    # Compilar
+   
     print("\n" + "="*60)
     print("🔨 COMPILANDO PROYECTO")
     print("="*60)
@@ -106,14 +106,14 @@ def main():
         exit(1)
     
     print("✅ Compilación exitosa\n")
-    
-    # Seleccionar carpeta
+  
+
     selected = select_folder()
     
     if selected is None:
         return
     
-    # Ejecutar según selección
+  
     if selected == "ALL":
         subfolders = get_input_subfolders()
         for subfolder in subfolders:

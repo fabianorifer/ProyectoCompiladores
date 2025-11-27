@@ -10,8 +10,8 @@ private:
     string input;
     int first;
     int current;
-    int line;      // Para tracking de línea
-    int column;    // Para tracking de columna
+    int line;      // tracking de línea
+    int column;    // tracking de columna
 
     // Métodos auxiliares privados
     char nextChar();

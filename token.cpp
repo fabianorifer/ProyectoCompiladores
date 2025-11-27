@@ -216,7 +216,7 @@ ostream& operator<<(ostream& outs, const Token& tok) {
         
         default: outs << "TOKEN(UNKNOWN, \"" << tok.text << "\")"; break;
     }
-    // Añadir información de ubicación si está disponible (>0)
+    
     if (tok.line > 0) {
         outs << " @(" << tok.line << ":" << tok.column << ")";
     }

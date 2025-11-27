@@ -51,7 +51,7 @@ int GenCodeVisitor::generar(Program* program) {
     return program->accept(this);
 }
 
-// Helper methods para identificar tipos sin dynamic_cast
+
 bool GenCodeVisitor::isFloatType(Type* type) {
     if (!type) return false;
     TypeKindVisitor visitor;
@@ -83,12 +83,12 @@ Type* GenCodeVisitor::getPointeeType(Type* type) {
 // ============================================
 
 int GenCodeVisitor::visit(BaseType* type) {
-    // No genera código directamente
+
     return 0;
 }
 
 int GenCodeVisitor::visit(PointerType* type) {
-    // No genera código directamente
+
     return 0;
 }
 
@@ -108,9 +108,7 @@ int GenCodeVisitor::visit(FloatExp* exp) {
     int floatLabel = labelCounter++;
     out << "  # FloatExp " << exp->value << "\n";
     
-    // Necesitamos guardar el literal en .rodata y cargarlo
-    // Por simplicidad, convertimos a bits y usamos movq + movq a xmm
-    // Alternativamente, generamos .LC label en .rodata
+
     out << ".section .rodata\n";
     out << ".LC" << floatLabel << ":\n";
     out << "  .double " << exp->value << "\n";
@@ -128,13 +126,13 @@ int GenCodeVisitor::visit(BoolExp* exp) {
 }
 
 int GenCodeVisitor::visit(StringExp* exp) {
-    // TODO: Implementar strings en .data
+
     out << "  # StringExp \"" << exp->value << "\" (not implemented)\n";
     return 0;
 }
 
 int GenCodeVisitor::visit(IdExp* exp) {
-    // Verificar si la variable tiene tipo float
+
     bool isFloat = false;
     if (varTypes.count(exp->id)) {
         isFloat = isFloatType(varTypes[exp->id]);
@@ -168,13 +166,13 @@ int GenCodeVisitor::visit(ParenExp* exp) {
 
 // Método auxiliar para evaluar expresiones constantes
 bool GenCodeVisitor::tryEvalConst(Exp* exp, long long& result) {
-    // Caso 1: NumberExp (literal numérico)
+    // Caso 1: NumberExp 
     if (exp->isConstant()) {
         result = exp->getConstValue();
         return true;
     }
     
-    // Caso 2: BinaryExp con ambos operandos constantes
+    // Caso 2: BinaryExp 
     BinaryExp* binExp = exp->asBinaryExp();
     if (binExp) {
         long long left, right;
@@ -202,7 +200,7 @@ bool GenCodeVisitor::tryEvalConst(Exp* exp, long long& result) {
 }
 
 int GenCodeVisitor::visit(BinaryExp* exp) {
-    // Intentar evaluar como constante
+
     long long constResult;
     if (tryEvalConst(exp, constResult)) {
         out << "  movq $" << constResult << ", %rax\n";
@@ -216,10 +214,10 @@ int GenCodeVisitor::visit(BinaryExp* exp) {
     
     // Guardar resultado izquierdo
     if (leftIsFloat) {
-        // Para floats: mover xmm0 a xmm2 para preservarlo
+        
         out << "  movsd %xmm0, %xmm2\n";
     } else {
-        // Para enteros: usar stack
+        
         out << "  pushq %rax\n";
     }
     
@@ -231,37 +229,34 @@ int GenCodeVisitor::visit(BinaryExp* exp) {
     bool resultIsFloat = leftIsFloat || rightIsFloat;
     
     if (resultIsFloat) {
-        // ===== OPERACIONES CON FLOATS =====
-        // Ahora: left está en xmm2 (si era float) o en stack (si era int)
-        //       right está en xmm0 (si es float) o en rax (si es int)
-        
-        // Convertir operandos si es necesario
+       
+      
         if (rightIsFloat && !leftIsFloat) {
-            // left (int) está en stack, right (float) está en xmm0
-            out << "  movsd %xmm0, %xmm1\n";  // Guardar right en xmm1
-            out << "  popq %rax\n";             // Recuperar left
-            out << "  cvtsi2sd %rax, %xmm0\n"; // Convertir left a float en xmm0
-            // Ahora: xmm0=left(float), xmm1=right(float)
+          
+            out << "  movsd %xmm0, %xmm1\n";  
+            out << "  popq %rax\n";             
+            out << "  cvtsi2sd %rax, %xmm0\n"; 
+            
         } else if (!rightIsFloat && leftIsFloat) {
-            // left (float) está en xmm2, right (int) está en rax
-            out << "  cvtsi2sd %rax, %xmm1\n"; // Convertir right a float en xmm1
-            out << "  movsd %xmm2, %xmm0\n";   // Mover left a xmm0
-            // Ahora: xmm0=left(float), xmm1=right(float)
+            
+            out << "  cvtsi2sd %rax, %xmm1\n"; 
+            out << "  movsd %xmm2, %xmm0\n";   
+           
         } else {
-            // Ambos son float: left en xmm2, right en xmm0
-            out << "  movsd %xmm0, %xmm1\n";   // right a xmm1
-            out << "  movsd %xmm2, %xmm0\n";   // left a xmm0
-            // Ahora: xmm0=left(float), xmm1=right(float)
+           
+            out << "  movsd %xmm0, %xmm1\n";   
+            out << "  movsd %xmm2, %xmm0\n";   
+    
         }
         
-        // Realizar operación (xmm0 = xmm0 OP xmm1)
+   
         switch (exp->op) {
             case PLUS_OP:  out << "  addsd %xmm1, %xmm0\n"; break;
             case MINUS_OP: out << "  subsd %xmm1, %xmm0\n"; break;
             case MUL_OP:   out << "  mulsd %xmm1, %xmm0\n"; break;
             case DIV_OP:   out << "  divsd %xmm1, %xmm0\n"; break;
                 
-            // Comparaciones con floats
+  
             case LT_OP:
             case LE_OP:
             case GT_OP:
@@ -279,7 +274,7 @@ int GenCodeVisitor::visit(BinaryExp* exp) {
                     case NE_OP: out << "  setne %al\n"; break;
                     default: break;
                 }
-                lastExprIsFloat = false;  // Resultado de comparación es bool (en GPR)
+                lastExprIsFloat = false;  
                 return 0;
                 
             default:
@@ -374,7 +369,7 @@ int GenCodeVisitor::visit(UnaryExp* exp) {
         case NEG_OP:
             exp->operand->accept(this);
             if (lastExprIsFloat) {
-                // Negar float: XOR con bit de signo
+             
                 out << "  # Negar float/double\n";
                 out << "  movq $0x8000000000000000, %rax\n";
                 out << "  movq %rax, %xmm1\n";
@@ -385,7 +380,7 @@ int GenCodeVisitor::visit(UnaryExp* exp) {
             break;
             
         case DEREF_OP: {
-            // Desreferenciar puntero
+        
             exp->operand->accept(this);  // Dirección en %rax
             
             // Determinar tipo apuntado desde varTypes
@@ -421,22 +416,22 @@ int GenCodeVisitor::visit(UnaryExp* exp) {
                                     break;
                             }
                         } else {
-                            // Puntero a puntero
+                           
                             out << "  movq (%rax), %rax\n";
                             lastExprIsFloat = false;
                         }
                     } else {
-                        // Tipo desconocido, asumir i64
+                        
                         out << "  movq (%rax), %rax\n";
                         lastExprIsFloat = false;
                     }
                 } else {
-                    // Tipo desconocido, asumir i64
+                
                     out << "  movq (%rax), %rax\n";
                     lastExprIsFloat = false;
                 }
             } else {
-                // No se pudo determinar el tipo, asumir i64
+               
                 out << "  movq (%rax), %rax\n";
                 lastExprIsFloat = false;
             }
@@ -458,10 +453,10 @@ int GenCodeVisitor::visit(UnaryExp* exp) {
                     out << "  # Error: variable no encontrada: " << varName << "\n";
                 }
             } else {
-                // Expresión compleja: evaluar y su dirección ya debería estar en %rax
+               
                 exp->operand->accept(this);
             }
-            lastExprIsFloat = false;  // Los punteros son enteros
+            lastExprIsFloat = false;  
             break;
         }
     }
@@ -506,11 +501,11 @@ int GenCodeVisitor::visit(FunCallExp* exp) {
 }
 
 int GenCodeVisitor::visit(CastExp* exp) {
-    // Evaluar expresión fuente
+ 
     exp->expr->accept(this);
     bool sourceIsFloat = lastExprIsFloat;
     
-    // Determinar si la fuente es un puntero (expresión unaria O variable de tipo puntero)
+ 
     bool sourceIsPointer = false;
     
     // Caso 1: UnaryExp con operadores de puntero
@@ -537,12 +532,12 @@ int GenCodeVisitor::visit(CastExp* exp) {
     if (targetIsPointer) {
         // Cast a puntero
         if (sourceIsFloat) {
-            // Float → Puntero: NO PERMITIDO (unsafe)
+            
             out << "  # ERROR: cast de float a puntero no permitido\n";
             lastExprIsFloat = false;
             return 0;
         }
-        // Entero/Puntero → Puntero: ya está en %rax, no hacer nada
+        
         out << "  # puntero/i64 → puntero (no-op, ya en %rax)\n";
         lastExprIsFloat = false;
         return 0;
@@ -557,7 +552,7 @@ int GenCodeVisitor::visit(CastExp* exp) {
     // Puntero → i64
     // ====================
     if (sourceIsPointer && targetKind == I64_TYPE) {
-        // Puntero ya está en %rax como i64, no hacer nada
+        // Puntero ya está en %rax como i64
         out << "  # puntero → i64 (no-op, ya en %rax)\n";
         lastExprIsFloat = false;
         return 0;
@@ -668,7 +663,7 @@ int GenCodeVisitor::visit(IfExp* exp) {
         return 0;
     }
     
-    // Condición no constante: generación normal con etiquetas
+   
     int label = labelCounter++;
     
     exp->condition->accept(this);
@@ -730,28 +725,25 @@ int GenCodeVisitor::visit(VarDeclStm* stm) {
 }
 
 int GenCodeVisitor::visit(AssignStm* stm) {
-    // Verificar si LHS es una desreferencia de puntero
+
     UnaryExp* unaryLhs = stm->lhs->asUnaryExp();
     if (unaryLhs && unaryLhs->op == DEREF_OP) {
-        // Asignación a través de puntero: *ptr = valor
         
-        // 1. Evaluar RHS (valor a escribir)
+    
         stm->rhs->accept(this);
         bool rhsIsFloat = lastExprIsFloat;
-        
-        // 2. Guardar resultado según tipo
+  
         if (rhsIsFloat) {
             out << "  subq $8, %rsp\n";
-            out << "  movsd %xmm0, (%rsp)\n";  // Temporal en stack
+            out << "  movsd %xmm0, (%rsp)\n"; 
         } else {
             out << "  pushq %rax\n";
         }
         
-        // 3. Evaluar LHS (obtener dirección del puntero)
         unaryLhs->operand->accept(this);
-        out << "  movq %rax, %rcx\n";  // Dirección en %rcx
-        
-        // 4. Recuperar valor y escribir
+        out << "  movq %rax, %rcx\n";  
+
+       
         if (rhsIsFloat) {
             out << "  movsd (%rsp), %xmm0\n";
             out << "  addq $8, %rsp\n";
@@ -803,7 +795,6 @@ int GenCodeVisitor::visit(AssignStm* stm) {
         return 0;
     }
     
-    // Caso normal: asignación a variable
     stm->rhs->accept(this);
     bool rhsIsFloat = lastExprIsFloat;
 
@@ -853,7 +844,6 @@ int GenCodeVisitor::visit(AssignStm* stm) {
                     out << "  movq %rax, " << idLhs->id << "(%rip)\n";
                 }
             } else {
-                // Asignación simple
                 if (treatAsFloat) {
                     out << "  movsd %xmm0, " << idLhs->id << "(%rip)\n";
                 } else {
@@ -887,7 +877,6 @@ int GenCodeVisitor::visit(AssignStm* stm) {
                     out << "  movq %rax, " << localVars[idLhs->id] << "(%rbp)\n";
                 }
             } else {
-                // Asignación simple
                 if (treatAsFloat) {
                     out << "  movsd %xmm0, " << localVars[idLhs->id] << "(%rbp)\n";
                 } else {
@@ -901,13 +890,10 @@ int GenCodeVisitor::visit(AssignStm* stm) {
 
 int GenCodeVisitor::visit(PrintlnStm* stm) {
     if (!stm->args.empty()) {
-        // Optimizar la expresión antes de generar código
         Exp* optimized = stm->args[0]->optimize();
         optimized->accept(this);
         
         if (lastExprIsFloat) {
-            // SysV ABI: floats van en %xmm0, contador de args float en %al
-            // El resultado ya está en %xmm0
             out << "  leaq float_fmt(%rip), %rdi\n";
             out << "  movl $1, %eax  # 1 argumento XMM\n";
             out << "  call printf@PLT\n";
@@ -1189,8 +1175,7 @@ void GenCodeVisitor::detectFloatsInExp(Exp* exp) {
         detectFloatsInExp(binExp->right);
         return;
     }
-    
-    // Aquí se pueden agregar más tipos de expresiones si es necesario
+
 }
 
 int GenCodeVisitor::visit(GlobalVarDecl* decl) {
@@ -1233,7 +1218,7 @@ int GenCodeVisitor::visit(FunDecl* decl) {
     
     // Reservar espacio en stack ANTES de mover parámetros
     int stackSize = -stackOffset - 8;
-    // Alinear a 16 bytes (requerido por ABI System V para llamadas a funciones)
+    // Alinear a 16 bytes
     if (stackSize % 16 != 0) {
         stackSize += 16 - (stackSize % 16);
     }
@@ -1241,7 +1226,7 @@ int GenCodeVisitor::visit(FunDecl* decl) {
         out << "  subq $" << stackSize << ", %rsp\n";
     }
     
-    // Ahora sí mover parámetros a sus posiciones
+ 
     for (auto* param : decl->params) {
         bool isFloatParam = false;
         if (param->type) {
@@ -1280,7 +1265,6 @@ int GenCodeVisitor::visit(FunDecl* decl) {
 }
 
 int GenCodeVisitor::visit(Program* prog) {
-    // PRE-PASADA: Detectar si hay flotantes en el programa
     detectFloats(prog);
     
     // Sección .data
@@ -1293,8 +1277,7 @@ int GenCodeVisitor::visit(Program* prog) {
     // Variables globales
     for (auto gv : prog->globalVars) {
         gv->accept(this);
-        
-        // Determinar si es float para usar .double o .quad
+ 
         bool isFloat = false;
         if (gv->varType) {
             isFloat = isFloatType(gv->varType);
@@ -1307,7 +1290,6 @@ int GenCodeVisitor::visit(Program* prog) {
         }
     }
     
-    // Sección .text
     out << ".text\n";
     
     // Funciones

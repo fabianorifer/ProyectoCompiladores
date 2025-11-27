@@ -82,41 +82,41 @@ public:
         // Palabras clave - conversión
         AS,             // as
         
-        // Palabras clave - memoria (opcional)
+        
         UNSAFE,         // unsafe
         
         // Macros
-        PRINTLN,        // println!
+        PRINTLN,        
         
         // Literales
-        NUM,            // Número entero: 123, 456
-        FLOAT,          // Número flotante: 3.14, 1.5e10
-        STRING,         // String literal: "hello"
+        NUM,            
+        FLOAT,          
+        STRING,         
         
         // Identificadores
         ID,             // Identificador: suma, x, resultado
         
-        // Tokens obsoletos (mantener por compatibilidad con código antiguo)
-        SQRT,           // sqrt (deprecated)
-        FUN,            // fun (deprecated - ahora es FN)
-        ENDFUN,         // endfun (deprecated)
-        PRINT,          // print (deprecated - ahora es PRINTLN)
-        DO,             // do (deprecated)
-        THEN,           // then (deprecated)
-        ENDIF,          // endif (deprecated)
-        ENDWHILE,       // endwhile (deprecated)
-        VAR,            // var (deprecated - ahora es LET)
+        
+        SQRT,           
+        FUN,            
+        ENDFUN,         
+        PRINT,          
+        DO,           
+        THEN,           
+        ENDIF,          
+        ENDWHILE,       
+        VAR,           
         
         // Control
-        ERR,            // Token de error
-        END             // Fin de entrada
+        ERR,            
+        END             
     };
 
     // Atributos
     Type type;
     string text;
-    int line;       // Número de línea (opcional, útil para errores)
-    int column;     // Número de columna (opcional)
+    int line;       // Número de línea
+    int column;     // Número de columna
 
     // Constructores
     Token(Type type);
@@ -127,7 +127,7 @@ public:
     friend ostream& operator<<(ostream& outs, const Token& tok);
     friend ostream& operator<<(ostream& outs, const Token* tok);
     
-    // Método auxiliar para obtener nombre del token (útil para debugging)
+   
     static string typeToString(Type type);
 };
 

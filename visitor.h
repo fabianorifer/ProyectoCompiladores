@@ -46,7 +46,6 @@ public:
     virtual int visit(Program* prog) = 0;
 };
 
-// Helper visitor para identificar tipos sin dynamic_cast
 class TypeKindVisitor : public Visitor {
 public:
     bool isBaseType = false;
@@ -65,7 +64,7 @@ public:
         return 0;
     }
     
-    // Implementaciones dummy para el resto
+
     int visit(BinaryExp*) override { return 0; }
     int visit(UnaryExp*) override { return 0; }
     int visit(NumberExp*) override { return 0; }
@@ -103,7 +102,7 @@ private:
     string currentFunction;
     Type* lastExprType;  // tipo de la última expresión evaluada
     bool lastExprIsFloat;  // true si última expr está en XMM, false si en GPR
-    bool usesFloats;  // true si el programa usa flotantes (para generar float_fmt)
+    bool usesFloats;  // true si el programa usa flotantes 
     
     // Función auxiliar para contar variables locales
     void countLocalVars(Block* block);
@@ -118,7 +117,7 @@ private:
     // Optimización: evaluar expresiones constantes
     bool tryEvalConst(Exp* exp, long long& result);
     
-    // Helper para identificar tipos
+
     bool isFloatType(Type* type);
     bool isPointerType(Type* type);
     BaseTypeKind getBaseTypeKind(Type* type);

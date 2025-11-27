@@ -20,7 +20,7 @@ private:
     Type* parseBaseType();
     Type* parsePointerType();
     
-    // Parsing de expresiones (según precedencia)
+    // Parsing de expresiones 
     Exp* parseExpr();              // Punto de entrada: IfExpr | LogicOr
     Exp* parseIfExpr();            // if expr
     Exp* parseLogicOr();           // ||

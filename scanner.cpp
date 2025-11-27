@@ -139,9 +139,9 @@ Token* Scanner::scanNumber() {
             nextChar();
         }
         
-        // Notación científica (opcional): e10, e-3, E+5
+        
         if (peekChar() == 'e' || peekChar() == 'E') {
-            nextChar(); // consumir 'e' o 'E'
+            nextChar(); 
             
             // Signo opcional
             if (peekChar() == '+' || peekChar() == '-') {
@@ -383,7 +383,7 @@ Token* Scanner::nextToken() {
                 nextChar();
                 token = new Token(Token::OR, "||", line, column);
             } else {
-                // | no está en tu gramática actualmente, marcar como error
+                
                 token = new Token(Token::ERR, "|", line, column);
             }
             break;
@@ -393,7 +393,7 @@ Token* Scanner::nextToken() {
                 nextChar();
                 token = new Token(Token::DOUBLE_DOT, "..", line, column);
             } else {
-                // . simple no está en tu gramática, marcar como error
+               
                 token = new Token(Token::ERR, ".", line, column);
             }
             break;

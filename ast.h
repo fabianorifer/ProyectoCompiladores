@@ -9,7 +9,7 @@ using namespace std;
 
 class Visitor;
 
-// Forward declarations
+
 class IdExp;
 class BinaryExp;
 class UnaryExp;
@@ -99,7 +99,7 @@ public:
     virtual IdExp* asIdExp() { return nullptr; }
     virtual BinaryExp* asBinaryExp() { return nullptr; }
     virtual UnaryExp* asUnaryExp() { return nullptr; }
-    virtual Exp* optimize() { return this; }  // Por defecto retorna this (sin cambios)
+    virtual Exp* optimize() { return this; }  
     virtual bool isConstant() { return false; }
     virtual long long getConstValue() { return 0; }
     static string binopToString(BinaryOp op);
@@ -210,7 +210,7 @@ class IfExp : public Exp {
 public:
     Exp* condition;
     class Block* thenBlock;
-    class Block* elseBlock;  // puede ser nullptr
+    class Block* elseBlock;  
     IfExp(Exp* c, class Block* t, class Block* e = nullptr) 
         : condition(c), thenBlock(t), elseBlock(e) {}
     int accept(Visitor* visitor);

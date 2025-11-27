@@ -206,7 +206,7 @@ Type* Parser::parsePointerType() {
             advance();
             isMut = false;
         } else {
-            // '*T' sin especificar const/mut → tratar como *const
+            // '*T' sin especificar const/mut → lo tratamos como *const
             isMut = false;
         }
     } else {
@@ -294,7 +294,7 @@ Stm* Parser::parseStmt() {
         ExprStm* exprStm = s->asExprStm();
         if (exprStm) {
             ReturnStm* retStm = new ReturnStm(exprStm->expr);
-            exprStm->expr = nullptr; // Evitar double delete
+            exprStm->expr = nullptr; 
             delete exprStm;
             return retStm;
         }

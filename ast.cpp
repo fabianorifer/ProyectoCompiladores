@@ -77,7 +77,7 @@ Exp* BinaryExp::optimize() {
     Exp* newLeft = left->optimize();
     Exp* newRight = right->optimize();
     
-    // Si ambos operandos son constantes, evaluar en compile-time
+    // Si ambos operandos son constantes, los evaluamos en tiempo de compilación
     if (newLeft->isConstant() && newRight->isConstant()) {
         long long lval = newLeft->getConstValue();
         long long rval = newRight->getConstValue();
@@ -102,18 +102,18 @@ Exp* BinaryExp::optimize() {
         }
         
         if (canOptimize) {
-            // Crear NumberExp con el resultado
+            // Creamos NumberExp con el resultado
             return new NumberExp(result);
         }
     }
     
-    // Si los operandos cambiaron, actualizar
+    // Si hubo cambios en los operandos, los cambiamos
     if (newLeft != left || newRight != right) {
         left = newLeft;
         right = newRight;
     }
     
-    return this;  // No se pudo optimizar completamente
+    return this;  
 }
 
 
