@@ -69,6 +69,7 @@ ret`;
   const [rsp, setRsp] = useState(0);
   const [tempStack, setTempStack] = useState([]);
   const [flags, setFlags] = useState({ zero: false, sign: false, overflow: false, carry: false });
+  const [callStack, setCallStack] = useState([]);
 
   const getAllLines = () => {
     return code.split('\n').map(l => l.trim()).filter(l => l);
@@ -125,6 +126,7 @@ ret`;
     let newTempStack = [...tempStack];
     let newFlags = { ...flags };
     let nextLine = lineIndex + 1;
+    let newCallStack = [...callStack];
 
     const getRegisterName = (operand) => {
       const reg = operand.replace('%', '');
@@ -482,7 +484,24 @@ ret`;
         break;
 
       case 'ret':
+        if (newCallStack.length > 0) {
+          nextLine = newCallStack.pop();
+        }
+        break;
+
       case 'call':
+        const funcName = operands[0];
+        if (funcName === 'printf@PLT') {
+          // Ignoramos printf
+          break;
+        }
+        // Guardamos la dirección de retorno (línea siguiente)
+        newCallStack.push(nextLine);
+        // Buscamos la función
+        const funcLine = findLabelLine(funcName);
+        if (funcLine !== -1) {
+          nextLine = funcLine;
+        }
         break;
     }
 
@@ -492,6 +511,7 @@ ret`;
     setRsp(newRsp);
     setTempStack(newTempStack);
     setFlags(newFlags);
+    setCallStack(newCallStack);
     
     return nextLine;
   };
@@ -516,6 +536,7 @@ ret`;
     setRsp(0);
     setTempStack([]);
     setFlags({ zero: false, sign: false, overflow: false, carry: false });
+    setCallStack([]);
   };
 
   const runAll = () => {
