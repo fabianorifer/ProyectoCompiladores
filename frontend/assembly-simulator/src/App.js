@@ -62,7 +62,15 @@ ret`;
     rcx: '',
     rsi: '',
     rdi: '',
-    rdx: ''
+    rdx: '',
+    xmm0: '',
+    xmm1: '',
+    xmm2: '',
+    xmm3: '',
+    xmm4: '',
+    xmm5: '',
+    xmm6: '',
+    xmm7: ''
   });
   const [stack, setStack] = useState({});
   const [rbp, setRbp] = useState(0);
@@ -70,6 +78,8 @@ ret`;
   const [tempStack, setTempStack] = useState([]);
   const [flags, setFlags] = useState({ zero: false, sign: false, overflow: false, carry: false });
   const [callStack, setCallStack] = useState([]);
+
+  const [rodata, setRodata] = useState({});
 
   const getAllLines = () => {
     return code.split('\n').map(l => l.trim()).filter(l => l);
@@ -108,6 +118,28 @@ ret`;
       instruction: parts[0],
       operands: parts.slice(1).join(' ').split(',').map(op => op.trim())
     };
+  };
+
+  const parseRodataSection = (codeText) => {
+    const lines = codeText.split('\n');
+    const map = {};
+    let currentLabel = null;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      const labelMatch = line.match(/^\.LC(\d+):\s*$/);
+      if (labelMatch) {
+        currentLabel = `.LC${labelMatch[1]}`;
+        continue;
+      }
+      if (currentLabel) {
+        const dbl = line.match(/^\.double\s+([+-]?[0-9]*\.?[0-9]+)/);
+        if (dbl) {
+          map[currentLabel] = parseFloat(dbl[1]);
+          currentLabel = null;
+        }
+      }
+    }
+    return map;
   };
 
   const executeInstruction = (lineIndex) => {
@@ -153,6 +185,9 @@ ret`;
       } else if (operand.startsWith('%')) {
         const regName = getRegisterName(operand);
         return newRegisters[regName] || 0;
+      } else if (/^\.LC\d+\(%rip\)$/.test(operand)) {
+        const label = operand.match(/^\.LC\d+/)[0];
+        return rodata[label] !== undefined ? rodata[label] : 0;
       } else if (operand.includes('(%rbp)') || operand.includes('(%rsp)')) {
         const match = operand.match(/-?\d+/);
         const offset = match ? parseInt(match[0]) : 0;
@@ -168,6 +203,8 @@ ret`;
         const regName = getRegisterName(operand);
         if (['rax', 'rcx', 'rsi', 'rdi', 'rdx'].includes(regName)) {
           newRegisters[regName] = value;
+        } else if (regName.startsWith('xmm')) {
+          newRegisters[regName] = typeof value === 'string' ? parseFloat(value) : value;
         }
       } else if (operand.includes('(%rbp)') || operand.includes('(%rsp)')) {
         const match = operand.match(/-?\d+/);
@@ -175,7 +212,7 @@ ret`;
         newStack[offset] = value;
       }
     };
-
+    
     switch (instruction) {
       case 'pushq':
         if (operands[0] === '%rbp') {
@@ -195,6 +232,69 @@ ret`;
         const value = getValue(operands[0]);
         setValue(operands[1], value);
         break;
+
+      // Floating point and SSE scalar ops
+      case 'movsd':
+      case 'movss': {
+        const src = operands[0];
+        const dst = operands[1];
+        const val = getValue(src);
+        setValue(dst, val);
+        break;
+      }
+      case 'cvtsi2sd': {
+        const src = operands[0];
+        const dst = operands[1];
+        const intVal = getValue(src);
+        setValue(dst, Number(intVal));
+        break;
+      }
+      case 'cvttsd2si': {
+        const src = operands[0];
+        const dst = operands[1];
+        const floatVal = getValue(src);
+        setValue(dst, Math.trunc(Number(floatVal)));
+        break;
+      }
+      case 'cvtsd2ss': {
+        const src = operands[0];
+        const dst = operands[1];
+        const floatVal = getValue(src);
+        setValue(dst, Number(floatVal));
+        break;
+      }
+      case 'addsd': {
+        const src = operands[0];
+        const dst = operands[1];
+        const a = Number(getValue(dst));
+        const b = Number(getValue(src));
+        setValue(dst, a + b);
+        break;
+      }
+      case 'subsd': {
+        const src = operands[0];
+        const dst = operands[1];
+        const a = Number(getValue(dst));
+        const b = Number(getValue(src));
+        setValue(dst, a - b);
+        break;
+      }
+      case 'mulsd': {
+        const src = operands[0];
+        const dst = operands[1];
+        const a = Number(getValue(dst));
+        const b = Number(getValue(src));
+        setValue(dst, a * b);
+        break;
+      }
+      case 'divsd': {
+        const src = operands[0];
+        const dst = operands[1];
+        const a = Number(getValue(dst));
+        const b = Number(getValue(src));
+        setValue(dst, b !== 0 ? a / b : a);
+        break;
+      }
 
       case 'addq':
       case 'addl':
@@ -530,13 +630,14 @@ ret`;
 
   const reset = () => {
     setCurrentLine(-1);
-    setRegisters({ rax: '', rcx: '', rsi: '', rdi: '', rdx: '' });
+    setRegisters({ rax: '', rcx: '', rsi: '', rdi: '', rdx: '', xmm0: '', xmm1: '', xmm2: '', xmm3: '', xmm4: '', xmm5: '', xmm6: '', xmm7: '' });
     setStack({});
     setRbp(0);
     setRsp(0);
     setTempStack([]);
     setFlags({ zero: false, sign: false, overflow: false, carry: false });
     setCallStack([]);
+    setRodata(parseRodataSection(code));
   };
 
   const runAll = () => {
@@ -586,6 +687,7 @@ ret`;
               value={code}
               onChange={(e) => {
                 setCode(e.target.value);
+                setRodata(parseRodataSection(e.target.value));
                 reset();
               }}
               className="w-full h-32 bg-gray-900 text-green-400 font-mono p-3 rounded border border-gray-700 focus:outline-none focus:border-blue-500"
@@ -638,6 +740,21 @@ ret`;
                 </div>
               </div>
             ))}
+          </div>
+          <div className="mt-4">
+            <h3 className="font-semibold mb-2">Registros XMM (floats)</h3>
+            <div className="space-y-2">
+              {['xmm0','xmm1','xmm2','xmm3','xmm4','xmm5','xmm6','xmm7'].map(reg => (
+                <div key={reg} className="flex bg-blue-600 rounded">
+                  <div className="w-24 font-bold p-3 uppercase border-r-2 border-blue-700">
+                    {reg}
+                  </div>
+                  <div className="flex-1 p-3 text-center font-mono">
+                    {registers[reg] !== '' ? registers[reg] : '-'}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
           <div className="mt-4">
             <h3 className="font-semibold mb-2">Flags</h3>
