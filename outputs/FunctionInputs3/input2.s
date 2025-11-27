@@ -5,7 +5,7 @@ print_fmt: .string "%ld \n"
 multiplicar:
   pushq %rbp
   movq %rsp, %rbp
-  subq $24, %rsp
+  subq $32, %rsp
   movq %rdi, -8(%rbp)
   movq %rsi, -16(%rbp)
   movq -8(%rbp), %rax

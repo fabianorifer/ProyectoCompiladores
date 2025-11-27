@@ -5,7 +5,7 @@ print_fmt: .string "%ld \n"
 main:
   pushq %rbp
   movq %rsp, %rbp
-  subq $24, %rsp
+  subq $32, %rsp
   movq $1, %rax
   movq %rax, -8(%rbp)
   movq $10, %rax
