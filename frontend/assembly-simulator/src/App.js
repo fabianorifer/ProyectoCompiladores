@@ -61,13 +61,14 @@ ret`;
     rax: '',
     rcx: '',
     rsi: '',
-    rdi: ''
+    rdi: '',
+    rdx: ''
   });
   const [stack, setStack] = useState({});
   const [rbp, setRbp] = useState(0);
   const [rsp, setRsp] = useState(0);
   const [tempStack, setTempStack] = useState([]);
-  const [flags, setFlags] = useState({ zero: false, sign: false });
+  const [flags, setFlags] = useState({ zero: false, sign: false, overflow: false, carry: false });
 
   const getAllLines = () => {
     return code.split('\n').map(l => l.trim()).filter(l => l);
@@ -163,7 +164,7 @@ ret`;
       
       if (operand.startsWith('%')) {
         const regName = getRegisterName(operand);
-        if (['rax', 'rcx', 'rsi', 'rdi'].includes(regName)) {
+        if (['rax', 'rcx', 'rsi', 'rdi', 'rdx'].includes(regName)) {
           newRegisters[regName] = value;
         }
       } else if (operand.includes('(%rbp)') || operand.includes('(%rsp)')) {
@@ -204,6 +205,11 @@ ret`;
           setValue(operands[1], result);
           newFlags.zero = result === 0;
           newFlags.sign = result < 0;
+          // Overflow si ambos operandos tienen el mismo signo y el resultado tiene signo diferente
+          newFlags.overflow = ((current >= 0 && addVal >= 0 && result < 0) || 
+                               (current < 0 && addVal < 0 && result >= 0));
+          // Carry para suma sin signo (simplificado)
+          newFlags.carry = result < current;
         }
         break;
 
@@ -218,6 +224,11 @@ ret`;
           setValue(operands[1], result);
           newFlags.zero = result === 0;
           newFlags.sign = result < 0;
+          // Overflow si los operandos tienen signo diferente y el resultado tiene signo diferente al minuendo
+          newFlags.overflow = ((current >= 0 && subVal < 0 && result < 0) || 
+                               (current < 0 && subVal >= 0 && result >= 0));
+          // Carry (borrow) para resta sin signo
+          newFlags.carry = current < subVal;
         }
         break;
 
@@ -243,10 +254,19 @@ ret`;
 
       case 'idivq':
       case 'divq':
-        const divVal = getValue(operands[0]);
-        if (divVal !== 0) {
-          newRegisters.rax = Math.floor((newRegisters.rax || 0) / divVal);
+        const divOperand = operands[0];
+        const divisor = getValue(divOperand);
+        if (divisor !== 0) {
+          const dividend = newRegisters.rax || 0;
+          newRegisters.rax = Math.floor(dividend / divisor);
+          newRegisters.rdx = dividend % divisor;
         }
+        break;
+
+      case 'cqto':
+      case 'cqo':
+        const raxValue = newRegisters.rax || 0;
+        newRegisters.rdx = raxValue < 0 ? -1 : 0;
         break;
 
       case 'cmpq':
@@ -256,6 +276,9 @@ ret`;
         const cmpResult = cmpVal1 - cmpVal2;
         newFlags.zero = cmpResult === 0;
         newFlags.sign = cmpResult < 0;
+        newFlags.overflow = ((cmpVal1 >= 0 && cmpVal2 < 0 && cmpResult < 0) || 
+                            (cmpVal1 < 0 && cmpVal2 >= 0 && cmpResult >= 0));
+        newFlags.carry = cmpVal1 < cmpVal2;
         break;
 
       case 'testq':
@@ -265,13 +288,52 @@ ret`;
         const testResult = testVal1 & testVal2;
         newFlags.zero = testResult === 0;
         newFlags.sign = testResult < 0;
+        newFlags.overflow = false;
+        newFlags.carry = false;
+        break;
+
+      case 'andq':
+      case 'andl':
+        const andVal = getValue(operands[0]);
+        const andCurrent = getValue(operands[1]);
+        const andResult = andCurrent & andVal;
+        setValue(operands[1], andResult);
+        newFlags.zero = andResult === 0;
+        newFlags.sign = andResult < 0;
+        newFlags.overflow = false;
+        newFlags.carry = false;
+        break;
+
+      case 'orq':
+      case 'orl':
+        const orVal = getValue(operands[0]);
+        const orCurrent = getValue(operands[1]);
+        const orResult = orCurrent | orVal;
+        setValue(operands[1], orResult);
+        newFlags.zero = orResult === 0;
+        newFlags.sign = orResult < 0;
+        newFlags.overflow = false;
+        newFlags.carry = false;
+        break;
+
+      case 'xorq':
+      case 'xorl':
+      case 'xor':
+        const xorVal = getValue(operands[0]);
+        const xorCurrent = getValue(operands[1]);
+        const xorResult = xorCurrent ^ xorVal;
+        setValue(operands[1], xorResult);
+        newFlags.zero = xorResult === 0;
+        newFlags.sign = xorResult < 0;
+        newFlags.overflow = false;
+        newFlags.carry = false;
         break;
 
       case 'setl':
-        setValue(operands[0], newFlags.sign ? 1 : 0);
+        setValue(operands[0], newFlags.sign !== newFlags.overflow ? 1 : 0);
         break;
       case 'setg':
-        setValue(operands[0], (!newFlags.zero && !newFlags.sign) ? 1 : 0);
+        setValue(operands[0], (!newFlags.zero && newFlags.sign === newFlags.overflow) ? 1 : 0);
         break;
       case 'sete':
         setValue(operands[0], newFlags.zero ? 1 : 0);
@@ -280,10 +342,22 @@ ret`;
         setValue(operands[0], !newFlags.zero ? 1 : 0);
         break;
       case 'setle':
-        setValue(operands[0], (newFlags.zero || newFlags.sign) ? 1 : 0);
+        setValue(operands[0], (newFlags.zero || newFlags.sign !== newFlags.overflow) ? 1 : 0);
         break;
       case 'setge':
-        setValue(operands[0], !newFlags.sign ? 1 : 0);
+        setValue(operands[0], newFlags.sign === newFlags.overflow ? 1 : 0);
+        break;
+      case 'setb':
+        setValue(operands[0], newFlags.carry ? 1 : 0);
+        break;
+      case 'setbe':
+        setValue(operands[0], (newFlags.carry || newFlags.zero) ? 1 : 0);
+        break;
+      case 'seta':
+        setValue(operands[0], (!newFlags.carry && !newFlags.zero) ? 1 : 0);
+        break;
+      case 'setae':
+        setValue(operands[0], !newFlags.carry ? 1 : 0);
         break;
 
       case 'leaq':
@@ -322,7 +396,7 @@ ret`;
         break;
 
       case 'jg':
-        if (!newFlags.zero && !newFlags.sign) {
+        if (!newFlags.zero && newFlags.sign === newFlags.overflow) {
           const jgLabel = operands[0];
           const jgLine = findLabelLine(jgLabel);
           if (jgLine !== -1) {
@@ -332,7 +406,7 @@ ret`;
         break;
 
       case 'jl':
-        if (newFlags.sign) {
+        if (newFlags.sign !== newFlags.overflow) {
           const jlLabel = operands[0];
           const jlLine = findLabelLine(jlLabel);
           if (jlLine !== -1) {
@@ -342,7 +416,7 @@ ret`;
         break;
 
       case 'jge':
-        if (!newFlags.sign) {
+        if (newFlags.sign === newFlags.overflow) {
           const jgeLabel = operands[0];
           const jgeLine = findLabelLine(jgeLabel);
           if (jgeLine !== -1) {
@@ -352,11 +426,51 @@ ret`;
         break;
 
       case 'jle':
-        if (newFlags.zero || newFlags.sign) {
+        if (newFlags.zero || newFlags.sign !== newFlags.overflow) {
           const jleLabel = operands[0];
           const jleLine = findLabelLine(jleLabel);
           if (jleLine !== -1) {
             nextLine = jleLine;
+          }
+        }
+        break;
+
+      case 'ja':
+        if (!newFlags.carry && !newFlags.zero) {
+          const jaLabel = operands[0];
+          const jaLine = findLabelLine(jaLabel);
+          if (jaLine !== -1) {
+            nextLine = jaLine;
+          }
+        }
+        break;
+
+      case 'jb':
+        if (newFlags.carry) {
+          const jbLabel = operands[0];
+          const jbLine = findLabelLine(jbLabel);
+          if (jbLine !== -1) {
+            nextLine = jbLine;
+          }
+        }
+        break;
+
+      case 'jae':
+        if (!newFlags.carry) {
+          const jaeLabel = operands[0];
+          const jaeLine = findLabelLine(jaeLabel);
+          if (jaeLine !== -1) {
+            nextLine = jaeLine;
+          }
+        }
+        break;
+
+      case 'jbe':
+        if (newFlags.carry || newFlags.zero) {
+          const jbeLabel = operands[0];
+          const jbeLine = findLabelLine(jbeLabel);
+          if (jbeLine !== -1) {
+            nextLine = jbeLine;
           }
         }
         break;
@@ -396,12 +510,12 @@ ret`;
 
   const reset = () => {
     setCurrentLine(-1);
-    setRegisters({ rax: '', rcx: '', rsi: '', rdi: '' });
+    setRegisters({ rax: '', rcx: '', rsi: '', rdi: '', rdx: '' });
     setStack({});
     setRbp(0);
     setRsp(0);
     setTempStack([]);
-    setFlags({ zero: false, sign: false });
+    setFlags({ zero: false, sign: false, overflow: false, carry: false });
   };
 
   const runAll = () => {
@@ -493,7 +607,7 @@ ret`;
         <div className="bg-gray-800 rounded-lg p-4">
           <h2 className="text-xl font-semibold mb-3">Registros</h2>
           <div className="space-y-2">
-            {['rax', 'rcx', 'rsi', 'rdi'].map(reg => (
+            {['rax', 'rcx', 'rdx', 'rsi', 'rdi'].map(reg => (
               <div key={reg} className="flex bg-yellow-600 rounded">
                 <div className="w-20 font-bold p-3 uppercase border-r-2 border-yellow-700">
                   {reg}
@@ -509,6 +623,8 @@ ret`;
             <div className="space-y-1 text-sm">
               <div>Zero (ZF): {flags.zero ? '1' : '0'}</div>
               <div>Sign (SF): {flags.sign ? '1' : '0'}</div>
+              <div>Overflow (OF): {flags.overflow ? '1' : '0'}</div>
+              <div>Carry (CF): {flags.carry ? '1' : '0'}</div>
             </div>
           </div>
         </div>
