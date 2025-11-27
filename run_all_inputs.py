@@ -1,6 +1,7 @@
 import os
 import subprocess
 import shutil
+import sys
 
 def get_input_subfolders():
     
@@ -49,7 +50,7 @@ def select_folder():
         except ValueError:
             print("❌ Por favor ingresa un número válido.")
 
-def run_inputs_from_folder(subfolder_name, output_dir):
+def run_inputs_from_folder(subfolder_name, output_dir, exe_path):
     
     input_dir = os.path.join("inputs", subfolder_name)
     os.makedirs(output_dir, exist_ok=True)
@@ -70,7 +71,7 @@ def run_inputs_from_folder(subfolder_name, output_dir):
         base_name = os.path.splitext(input_file)[0]
         
         print(f"▶️  Ejecutando {input_file}...", end=" ")
-        run_cmd = ["./compiler.exe", filepath]
+        run_cmd = [exe_path, filepath]
         result = subprocess.run(run_cmd, capture_output=True, text=True)
         
        
@@ -97,7 +98,13 @@ def main():
     print("\n" + "="*60)
     print("🔨 COMPILANDO PROYECTO")
     print("="*60)
-    compile = ["g++"] + programa
+    # Detectar plataforma para nombre del ejecutable
+    is_windows = sys.platform.startswith("win")
+    exe_name = "compiler.exe" if is_windows else "compiler"
+    exe_path = os.path.join(".", exe_name)
+
+    # Comando de compilación con salida explícita
+    compile = ["g++"] + programa + ["-o", exe_name]
     print("Comando:", " ".join(compile))
     result = subprocess.run(compile, capture_output=True, text=True)
     
@@ -118,10 +125,10 @@ def main():
         subfolders = get_input_subfolders()
         for subfolder in subfolders:
             output_dir = os.path.join("outputs", subfolder)
-            run_inputs_from_folder(subfolder, output_dir)
+            run_inputs_from_folder(subfolder, output_dir, exe_path)
     else:
         output_dir = os.path.join("outputs", selected)
-        run_inputs_from_folder(selected, output_dir)
+        run_inputs_from_folder(selected, output_dir, exe_path)
     
     print(f"\n{'='*60}")
     print("✅ PROCESO COMPLETADO")
