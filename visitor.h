@@ -103,10 +103,17 @@ private:
     string currentFunction;
     Type* lastExprType;  // tipo de la última expresión evaluada
     bool lastExprIsFloat;  // true si última expr está en XMM, false si en GPR
+    bool usesFloats;  // true si el programa usa flotantes (para generar float_fmt)
     
     // Función auxiliar para contar variables locales
     void countLocalVars(Block* block);
     void countLocalVarsInStmt(Stm* stmt);
+    
+    // Pre-pasada para detectar flotantes
+    void detectFloats(Program* prog);
+    void detectFloatsInBlock(Block* block);
+    void detectFloatsInStmt(Stm* stmt);
+    void detectFloatsInExp(Exp* exp);
     
     // Optimización: evaluar expresiones constantes
     bool tryEvalConst(Exp* exp, long long& result);

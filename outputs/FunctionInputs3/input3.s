@@ -1,12 +1,11 @@
 .data
 print_fmt: .string "%ld \n"
-float_fmt: .string "%f \n"
 .text
 .globl maximo
 maximo:
   pushq %rbp
   movq %rsp, %rbp
-  subq $32, %rsp
+  subq $24, %rsp
   movq %rdi, -8(%rbp)
   movq %rsi, -16(%rbp)
   movq -8(%rbp), %rax
@@ -37,7 +36,7 @@ maximo:
 main:
   pushq %rbp
   movq %rsp, %rbp
-  subq $16, %rsp
+  subq $8, %rsp
   movq $15, %rax
   movq %rax, %rdi
   movq $10, %rax

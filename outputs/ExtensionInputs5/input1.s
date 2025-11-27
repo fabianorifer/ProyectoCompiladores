@@ -6,7 +6,7 @@ float_fmt: .string "%f \n"
 main:
   pushq %rbp
   movq %rsp, %rbp
-  subq $32, %rsp
+  subq $24, %rsp
   # FloatExp 3.14
 .section .rodata
 .LC0:

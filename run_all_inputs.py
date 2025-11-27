@@ -70,16 +70,17 @@ def run_inputs_from_folder(subfolder_name, output_dir):
         base_name = os.path.splitext(input_file)[0]
         
         print(f"▶️  Ejecutando {input_file}...", end=" ")
-        run_cmd = ["./a.out", filepath]
+        run_cmd = ["./compiler.exe", filepath]
         result = subprocess.run(run_cmd, capture_output=True, text=True)
         
         # Archivo .s generado (se crea en la misma carpeta del input)
         asm_file = os.path.join(input_dir, f"{base_name}.s")
         
-        # Mover archivo si existe
+        # Copiar archivo a outputs y eliminar de inputs
         if os.path.isfile(asm_file):
             dest_asm = os.path.join(output_dir, f"{base_name}.s")
-            shutil.move(asm_file, dest_asm)
+            shutil.copy2(asm_file, dest_asm)
+            os.remove(asm_file)  # Eliminar el archivo de inputs/
             print("✅")
         else:
             print("⚠️  (no se generó .s)")

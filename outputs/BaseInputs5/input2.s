@@ -1,12 +1,11 @@
 .data
 print_fmt: .string "%ld \n"
-float_fmt: .string "%f \n"
 .text
 .globl main
 main:
   pushq %rbp
   movq %rsp, %rbp
-  subq $32, %rsp
+  subq $24, %rsp
   movq $15, %rax
   movq %rax, -8(%rbp)
   movq $7, %rax

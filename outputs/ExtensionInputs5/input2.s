@@ -6,7 +6,7 @@ float_fmt: .string "%f \n"
 main:
   pushq %rbp
   movq %rsp, %rbp
-  subq $32, %rsp
+  subq $24, %rsp
   movq $5, %rax
   movq %rax, -8(%rbp)
   movq -8(%rbp), %rax

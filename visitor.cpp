@@ -45,7 +45,7 @@ int Program::accept(Visitor* v) { return v->visit(this); }
 // ============================================
 
 GenCodeVisitor::GenCodeVisitor(ostream& output) 
-    : out(output), stackOffset(-8), labelCounter(0), inFunction(false), lastExprType(nullptr), lastExprIsFloat(false) {}
+    : out(output), stackOffset(-8), labelCounter(0), inFunction(false), lastExprType(nullptr), lastExprIsFloat(false), usesFloats(false) {}
 
 int GenCodeVisitor::generar(Program* program) {
     return program->accept(this);
@@ -103,6 +103,7 @@ int GenCodeVisitor::visit(NumberExp* exp) {
 }
 
 int GenCodeVisitor::visit(FloatExp* exp) {
+    usesFloats = true;  // Marcar que se usan flotantes
     // Generar float literal en .data section
     int floatLabel = labelCounter++;
     out << "  # FloatExp " << exp->value << "\n";
@@ -1071,6 +1072,127 @@ void GenCodeVisitor::countLocalVarsInStmt(Stm* stmt) {
     }
 }
 
+// ============================================
+// Pre-pasada para detectar flotantes
+// ============================================
+
+void GenCodeVisitor::detectFloats(Program* prog) {
+    // Verificar variables globales
+    for (auto gv : prog->globalVars) {
+        if (gv->varType && isFloatType(gv->varType)) {
+            usesFloats = true;
+            return;
+        }
+    }
+    
+    // Verificar funciones
+    for (auto fun : prog->functions) {
+        // Verificar parámetros
+        for (auto param : fun->params) {
+            if (param->type && isFloatType(param->type)) {
+                usesFloats = true;
+                return;
+            }
+        }
+        
+        // Verificar tipo de retorno
+        if (fun->returnType && isFloatType(fun->returnType)) {
+            usesFloats = true;
+            return;
+        }
+        
+        // Verificar cuerpo
+        if (fun->body) {
+            detectFloatsInBlock(fun->body);
+            if (usesFloats) return;
+        }
+    }
+}
+
+void GenCodeVisitor::detectFloatsInBlock(Block* block) {
+    for (auto stmt : block->stmts) {
+        detectFloatsInStmt(stmt);
+        if (usesFloats) return;
+    }
+}
+
+void GenCodeVisitor::detectFloatsInStmt(Stm* stmt) {
+    if (usesFloats) return;
+    
+    VarDeclStm* varDecl = stmt->asVarDeclStm();
+    if (varDecl) {
+        if (varDecl->varType && isFloatType(varDecl->varType)) {
+            usesFloats = true;
+            return;
+        }
+        if (varDecl->initializer) {
+            detectFloatsInExp(varDecl->initializer);
+        }
+        return;
+    }
+    
+    Block* block = stmt->asBlock();
+    if (block) {
+        detectFloatsInBlock(block);
+        return;
+    }
+    
+    IfStm* ifStm = stmt->asIfStm();
+    if (ifStm) {
+        if (ifStm->condition) detectFloatsInExp(ifStm->condition);
+        if (usesFloats) return;
+        detectFloatsInBlock(ifStm->thenBlock);
+        if (usesFloats) return;
+        if (ifStm->elseBlock) detectFloatsInBlock(ifStm->elseBlock);
+        return;
+    }
+    
+    WhileStm* whileStm = stmt->asWhileStm();
+    if (whileStm) {
+        if (whileStm->condition) detectFloatsInExp(whileStm->condition);
+        if (usesFloats) return;
+        detectFloatsInBlock(whileStm->body);
+        return;
+    }
+    
+    ForRangeStm* forStm = stmt->asForRangeStm();
+    if (forStm) {
+        if (forStm->rangeStart) detectFloatsInExp(forStm->rangeStart);
+        if (usesFloats) return;
+        if (forStm->rangeEnd) detectFloatsInExp(forStm->rangeEnd);
+        if (usesFloats) return;
+        detectFloatsInBlock(forStm->body);
+        return;
+    }
+    
+    // AssignStm, PrintlnStm, ReturnStm, ExprStm - verificar expresiones
+    ExprStm* exprStm = stmt->asExprStm();
+    if (exprStm && exprStm->expr) {
+        detectFloatsInExp(exprStm->expr);
+    }
+}
+
+void GenCodeVisitor::detectFloatsInExp(Exp* exp) {
+    if (usesFloats || !exp) return;
+    
+    // Verificar si es FloatExp
+    if (dynamic_cast<FloatExp*>(exp)) {
+        usesFloats = true;
+        return;
+    }
+    
+    // Verificar BinaryExp
+    BinaryExp* binExp = exp->asBinaryExp();
+    if (binExp) {
+        detectFloatsInExp(binExp->left);
+        if (usesFloats) return;
+        detectFloatsInExp(binExp->right);
+        return;
+    }
+    
+    // Aquí se pueden agregar más tipos de expresiones si es necesario
+}
+
 int GenCodeVisitor::visit(GlobalVarDecl* decl) {
     globalVars[decl->varName] = true;
     if (decl->varType) {
@@ -1111,6 +1233,7 @@ int GenCodeVisitor::visit(FunDecl* decl) {
     
     // Reservar espacio en stack ANTES de mover parámetros
     int stackSize = -stackOffset - 8;
+    // Alinear a 16 bytes (requerido por ABI System V para llamadas a funciones)
     if (stackSize % 16 != 0) {
         stackSize += 16 - (stackSize % 16);
     }
@@ -1157,10 +1280,15 @@ int GenCodeVisitor::visit(FunDecl* decl) {
 }
 
 int GenCodeVisitor::visit(Program* prog) {
+    // PRE-PASADA: Detectar si hay flotantes en el programa
+    detectFloats(prog);
+    
     // Sección .data
     out << ".data\n";
     out << "print_fmt: .string \"%ld \\n\"\n";
-    out << "float_fmt: .string \"%f \\n\"\n";
+    if (usesFloats) {
+        out << "float_fmt: .string \"%f \\n\"\n";
+    }
     
     // Variables globales
     for (auto gv : prog->globalVars) {

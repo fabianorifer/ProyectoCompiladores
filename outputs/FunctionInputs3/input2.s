@@ -1,12 +1,11 @@
 .data
 print_fmt: .string "%ld \n"
-float_fmt: .string "%f \n"
 .text
 .globl multiplicar
 multiplicar:
   pushq %rbp
   movq %rsp, %rbp
-  subq $32, %rsp
+  subq $24, %rsp
   movq %rdi, -8(%rbp)
   movq %rsi, -16(%rbp)
   movq -8(%rbp), %rax

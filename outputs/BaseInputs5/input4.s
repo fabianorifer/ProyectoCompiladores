@@ -1,6 +1,5 @@
 .data
 print_fmt: .string "%ld \n"
-float_fmt: .string "%f \n"
 .text
 .globl main
 main:
