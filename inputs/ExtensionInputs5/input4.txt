@@ -1,0 +1,17 @@
+fn main() {
+    let mut x: i32;
+    let mut ptr: *mut i32;
+    let mut addr: i64;
+    
+    x = 10;
+    ptr = &mut x as *mut i32;
+    
+    addr = ptr as i64;
+    println!("{}", addr);
+    
+    let ptr2: *mut i32 = addr as *mut i32;
+    unsafe {
+        *ptr2 = 20;
+    }
+    println!("{}", x);
+}

@@ -1,29 +1,61 @@
 #ifndef PARSER_H       
 #define PARSER_H
 
-#include "scanner.h"    // Incluye la definición del escáner (provee tokens al parser)
-#include "ast.h"        // Incluye las definiciones para construir el Árbol de Sintaxis Abstracta (AST)
+#include "scanner.h"
+#include "ast.h"
 
 class Parser {
 private:
-    Scanner* scanner;       // Puntero al escáner, de donde se leen los tokens
-    Token *current, *previous; // Punteros al token actual y al anterior
-    bool match(Token::Type ttype);   // Verifica si el token actual coincide con un tipo esperado y avanza si es así
-    bool check(Token::Type ttype);   // Comprueba si el token actual es de cierto tipo, sin avanzar
-    bool advance();                  // Avanza al siguiente token
-    bool isAtEnd();                  // Comprueba si ya se llegó al final de la entrada
+    Scanner* scanner;
+    Token *current, *previous;
+    
+    // Métodos auxiliares
+    bool match(Token::Type ttype);
+    bool check(Token::Type ttype);
+    bool advance();
+    bool isAtEnd();
+    
+    // Parsing de tipos
+    Type* parseType();
+    Type* parseBaseType();
+    Type* parsePointerType();
+    
+    // Parsing de expresiones 
+    Exp* parseExpr();              // Punto de entrada: IfExpr | LogicOr
+    Exp* parseIfExpr();            // if expr
+    Exp* parseLogicOr();           // ||
+    Exp* parseLogicAnd();          // &&
+    Exp* parseEquality();          // == !=
+    Exp* parseRelational();        // < <= > >=
+    Exp* parseAdditive();          // + -
+    Exp* parseMultiplicative();    // * / %
+    Exp* parsePower();             // **
+    Exp* parsePrefix();            // ! - & &mut *
+    Exp* parseCast();              // as Type
+    Exp* parsePostfix();           // function calls
+    Exp* parsePrimary();           // literals, ID, (expr)
+    
+    // Parsing de statements
+    Stm* parseStmt();
+    Stm* parseSimpleStmt();
+    VarDeclStm* parseVarDecl();
+    AssignStm* parseAssignStmt();
+    ReturnStm* parseReturnStmt();
+    ExprStm* parseExprStmt();
+    IfStm* parseIfStmt();
+    WhileStm* parseWhileStmt();
+    ForRangeStm* parseForRangeStmt();
+    PrintlnStm* parsePrintlnStmt();
+    Block* parseBlock();
+    
+    // Parsing de declaraciones top-level
+    GlobalVarDecl* parseGlobalVarDecl();
+    FunDecl* parseFunDecl();
+    Param* parseParam();
+    
 public:
-    Parser(Scanner* scanner);       
+    Parser(Scanner* sc);
     Program* parseProgram();
-    FunDec* parseFunDec();
-    Body* parseBody();
-    VarDec* parseVarDec();
-    Stm* parseStm();
-    Exp* parseCE();
-    Exp* parseBE();
-    Exp* parseE();
-    Exp* parseT();
-    Exp* parseF();
 };
 
 #endif // PARSER_H      

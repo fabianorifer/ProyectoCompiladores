@@ -1,0 +1,10 @@
+fn main() {
+    let mut x: i32;
+    let mut y: f64;
+    let mut z: i64;
+    x = 5;
+    y = x as f64 + 2.5;
+    z = y as i64;
+    println!("{}", y);
+    println!("{}", z);
+}

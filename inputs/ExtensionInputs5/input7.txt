@@ -1,0 +1,83 @@
+fn main() {
+    let mut x: i32;
+    let mut y: i64;
+    let mut z: f64;
+    let mut ptr_i32: *mut i32;
+    let mut ptr_i64: *mut i64;
+    let mut ptr_f64: *mut f64;
+    let mut addr: i64;
+    let mut valor: i32;
+    
+    // TEST 1: Puntero básico a i32
+    x = 10;
+    ptr_i32 = &mut x as *mut i32;
+    unsafe {
+        *ptr_i32 = 20;
+    }
+    println!("{}", x);  // Debe imprimir: 20
+    
+    // TEST 2: Leer a través de puntero
+    unsafe {
+        valor = *ptr_i32;
+    }
+    println!("{}", valor);  // Debe imprimir: 20
+    
+    // TEST 3: Conversión puntero → i64
+    addr = ptr_i32 as i64;
+    println!("{}", addr);  // Debe imprimir: dirección (ej: 140732920755196)
+    
+    // TEST 4: Conversión i64 → puntero y uso
+    let ptr2: *mut i32 = addr as *mut i32;
+    unsafe {
+        *ptr2 = 30;
+    }
+    println!("{}", x);  // Debe imprimir: 30
+    
+    // TEST 5: Puntero a i64
+    y = 1000000;
+    ptr_i64 = &mut y as *mut i64;
+    unsafe {
+        *ptr_i64 = 2000000;
+    }
+    println!("{}", y);  // Debe imprimir: 2000000
+    
+    // TEST 6: Puntero a f64
+    z = 3.14159;
+    ptr_f64 = &mut z as *mut f64;
+    println!("{}", z);  // Debe imprimir: 3.14159
+    unsafe {
+        *ptr_f64 = 2.71828;
+    }
+    println!("{}", z);  // Debe imprimir: 2.71828
+    
+    // TEST 7: Operaciones aritméticas con valores desreferenciados
+    x = 100;
+    unsafe {
+        *ptr_i32 = *ptr_i32 + 50;
+    }
+    println!("{}", x);  // Debe imprimir: 150
+    
+    // TEST 8: Múltiples punteros a la misma variable
+    let ptr3: *mut i32 = &mut x as *mut i32;
+    let ptr4: *mut i32 = &mut x as *mut i32;
+    unsafe {
+        *ptr3 = 200;
+        *ptr4 = *ptr4 + 100;
+    }
+    println!("{}", x);  // Debe imprimir: 300
+    
+    // TEST 9: Conversión entre tipos de punteros (via i64)
+    let addr_i64: i64 = ptr_i32 as i64;
+    let ptr_desde_addr: *mut i32 = addr_i64 as *mut i32;
+    unsafe {
+        *ptr_desde_addr = 500;
+    }
+    println!("{}", x);  // Debe imprimir: 500
+    
+    // TEST 10: Puntero constante (lectura)
+    let ptr_const: *const i32 = &x as *const i32;
+    unsafe {
+        let lectura: i32 = *ptr_const;
+        println!("{}", lectura);  // Debe imprimir: 500
+    }
+}

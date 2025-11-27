@@ -1,0 +1,9 @@
+fn main() {
+    let mut a: i32;
+    let mut b: i32;
+    let mut resultado: i32;
+    a = 15;
+    b = 7;
+    resultado = a + b * 2 - 5;
+    println!("{}", resultado);
+}

@@ -1,9 +1,10 @@
 import os
 import subprocess
 import shutil
+import sys
 
 def get_input_subfolders():
-    """Obtiene todas las subcarpetas dentro de 'inputs/'"""
+    
     inputs_dir = "inputs"
     if not os.path.exists(inputs_dir):
         return []
@@ -16,7 +17,7 @@ def get_input_subfolders():
     return sorted(subfolders)
 
 def select_folder():
-    """Permite al usuario seleccionar una subcarpeta"""
+    
     subfolders = get_input_subfolders()
     
     if not subfolders:
@@ -49,12 +50,12 @@ def select_folder():
         except ValueError:
             print("❌ Por favor ingresa un número válido.")
 
-def run_inputs_from_folder(subfolder_name, output_dir):
-    """Ejecuta todos los inputs de una subcarpeta específica"""
+def run_inputs_from_folder(subfolder_name, output_dir, exe_path):
+    
     input_dir = os.path.join("inputs", subfolder_name)
     os.makedirs(output_dir, exist_ok=True)
     
-    # Obtener todos los archivos .txt
+    
     input_files = sorted([f for f in os.listdir(input_dir) if f.endswith('.txt')])
     
     if not input_files:
@@ -70,33 +71,40 @@ def run_inputs_from_folder(subfolder_name, output_dir):
         base_name = os.path.splitext(input_file)[0]
         
         print(f"▶️  Ejecutando {input_file}...", end=" ")
-        run_cmd = ["./a.out", filepath]
+        run_cmd = [exe_path, filepath]
         result = subprocess.run(run_cmd, capture_output=True, text=True)
         
-        # Archivo .s generado (se crea en la misma carpeta del input)
+       
         asm_file = os.path.join(input_dir, f"{base_name}.s")
         
-        # Mover archivo si existe
+        
         if os.path.isfile(asm_file):
             dest_asm = os.path.join(output_dir, f"{base_name}.s")
-            shutil.move(asm_file, dest_asm)
+            shutil.copy2(asm_file, dest_asm)
+            os.remove(asm_file)  
             print("✅")
         else:
             print("⚠️  (no se generó .s)")
         
-        # Mostrar errores si los hay
+        
         if result.stderr:
             print(f"   ⚠️  Error: {result.stderr.strip()}")
 
 def main():
-    # Archivos c++
+    
     programa = ["main.cpp", "scanner.cpp", "token.cpp", "parser.cpp", "ast.cpp", "visitor.cpp"]
     
-    # Compilar
+   
     print("\n" + "="*60)
     print("🔨 COMPILANDO PROYECTO")
     print("="*60)
-    compile = ["g++"] + programa
+    # Detectar plataforma para nombre del ejecutable
+    is_windows = sys.platform.startswith("win")
+    exe_name = "compiler.exe" if is_windows else "compiler"
+    exe_path = os.path.join(".", exe_name)
+
+    # Comando de compilación con salida explícita
+    compile = ["g++"] + programa + ["-o", exe_name]
     print("Comando:", " ".join(compile))
     result = subprocess.run(compile, capture_output=True, text=True)
     
@@ -105,22 +113,22 @@ def main():
         exit(1)
     
     print("✅ Compilación exitosa\n")
-    
-    # Seleccionar carpeta
+  
+
     selected = select_folder()
     
     if selected is None:
         return
     
-    # Ejecutar según selección
+  
     if selected == "ALL":
         subfolders = get_input_subfolders()
         for subfolder in subfolders:
             output_dir = os.path.join("outputs", subfolder)
-            run_inputs_from_folder(subfolder, output_dir)
+            run_inputs_from_folder(subfolder, output_dir, exe_path)
     else:
         output_dir = os.path.join("outputs", selected)
-        run_inputs_from_folder(selected, output_dir)
+        run_inputs_from_folder(selected, output_dir, exe_path)
     
     print(f"\n{'='*60}")
     print("✅ PROCESO COMPLETADO")

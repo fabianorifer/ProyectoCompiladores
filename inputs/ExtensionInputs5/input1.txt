@@ -1,0 +1,10 @@
+fn main() {
+    let mut x: f32;
+    let mut y: f64;
+    let mut resultado: f64;
+    x = 3.14;
+    y = 2.718;
+    resultado = y + 10.5;
+    println!("{}", x);
+    println!("{}", resultado);
+}
